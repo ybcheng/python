@@ -1,2 +1,2 @@
 # python
-python script
+python scripts
