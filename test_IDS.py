@@ -208,7 +208,7 @@ def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
             #chl_filename = strops.ireplace("IDS", "chl", filename)
             #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
             chl_filename = filename.replace('IDS', 'chl')
-            chl_filename = chl_filename.replace(in_dir, 'otuput')
+            chl_filename = chl_filename.replace(in_dir, 'output')
             dir_name = os.path.dirname(chl_filename)
             if not os.path.isdir(dir_name):
                 os.makedirs(dir_name)
@@ -356,3 +356,95 @@ def empline_cal_files(input_dir, output_dir, img_ext = '.tif',
     for (i, s, o) in zip(input_files, spectra_files, output_files):
         empline_cal(i, s, o, mask_val = mask_val)
         
+
+def count_class(image_filename):
+    """
+    count the pixels of each of the class:
+    blue: (0,0,255)
+    green: (0,155,0)
+    yellow: (255,255,0)
+    red: (255,0,0)
+    
+    Parameters
+    ----------
+    image_filename: str
+        full path of the classified image file
+    """
+    
+    blue=0
+    green=0
+    yellow=0
+    red=0
+    black=0
+    
+    img = imio.imread(image_filename)
+    
+    spectral_axis = imio.guess_spectral_axis(img) 
+    if spectral_axis == 0:
+        img = imio.axshuffle(img)
+        
+    for i in range(0,img.shape[0]):
+        for j in range(0,img.shape[1]):
+            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 255:
+                blue = blue + 1
+            if img[i,j,0] == 0 and img[i,j,1] == 155 and img[i,j,2] == 0:
+                green = green + 1
+            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 0:
+                yellow = yellow + 1
+            if img[i,j,0] == 255 and img[i,j,1] == 0 and img[i,j,2] == 0:
+                red = red + 1
+            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
+                black = black + 1
+                
+    print blue, float(blue)/float(blue+green+yellow+red)
+    print green, float(green)/float(blue+green+yellow+red)
+    print yellow, float(yellow)/float(blue+green+yellow+red)
+    print red, float(red)/float(blue+green+yellow+red)
+    
+    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
+        print("sum don't match")
+        
+        
+def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
+    """
+    designed to stack all five bands together
+    
+    Parameters
+    ----------
+    input_dir: str
+        directory where nir bands are stored
+    """
+    
+    nir_files = glob.glob(input_dir + '*' + in_ext)
+    output_files = [output_dir + os.path.basename(nir_file) 
+                    for nir_file in nir_files]
+    
+    for i in range(0, len(output_files)):
+        output_files[i] = output_files[i].replace(in_ext, out_ext)
+    
+    red_files = glob.glob(input_dir.replace('IDS NIR', 'IDS Red')+'*'+in_ext)
+    svn_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 700')+'*'+in_ext)
+    fiv_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 550')+'*'+in_ext)
+    fou_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 480')+'*'+in_ext)
+    
+    for (nir, out) in zip(nir_files, output_files):
+        temp = imio.imread(nir)
+        stacked = np.empty([temp.shape[0], temp.shape[1], 5], temp.dtype)
+        stacked[:,:,0] = copy.deepcopy(temp)
+        for red in red_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(red)[0:20]:
+                temp = imio.imread(red)
+                stacked[:,:,1] = copy.deepcopy(temp)
+        for svn in svn_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(svn)[0:20]:
+                temp = imio.imread(svn)
+                stacked[:,:,2] = copy.deepcopy(temp)
+        for fiv in fiv_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(fiv)[0:20]:
+                temp = imio.imread(fiv)
+                stacked[:,:,3] = copy.deepcopy(temp)
+        for fou in fou_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(fou)[0:20]:
+                temp = imio.imread(fou)
+                stacked[:,:,4] = copy.deepcopy(temp)
+        imio.imsave(out,stacked)
