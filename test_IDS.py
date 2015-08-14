@@ -18,11 +18,13 @@ import pandas as pd
 import numpy as np
 import time
 import copy
+import matplotlib.pyplot as plt
 from scipy import stats
 
 from ..imops import imio
 from ..gis import rastertools
 from ..gen import strops
+from ..cv import classify, slicing
 
 
 def gen_imu2(file_path, imufile, imufile2, ext='.tif'):
@@ -429,7 +431,7 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
     
     for (nir, out) in zip(nir_files, output_files):
         temp = imio.imread(nir)
-        stacked = np.empty([temp.shape[0], temp.shape[1], 5], temp.dtype)
+        stacked = np.empty(temp.shape + (5,), temp.dtype)
         stacked[:,:,0] = copy.deepcopy(temp)
         for red in red_files:
             if os.path.basename(nir)[0:20] == os.path.basename(red)[0:20]:
@@ -448,3 +450,84 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
                 temp = imio.imread(fou)
                 stacked[:,:,4] = copy.deepcopy(temp)
         imio.imsave(out,stacked)
+        
+        
+def percent_plot(input_file, auto_acre,
+                 soil_value=0.4, l_bound=0.05, u_bound=0.95, num_bins=5):
+    """        
+    it mostly like will only work with NDVI derived from the standard procedure 
+    background/masked value should be set to NaN or -1
+    
+    Parameters
+    ----------
+    """
+    
+    img = imio.imread(input_file)
+    img[np.isnan(img)] = -1
+    masked = np.ma.masked_less(img, -0.9999)
+    values = classify.prep_im(masked)
+    
+    max_value = np.max(values)
+    bins, percentiles = slicing.get_percentiles(values)
+    l_value = round(slicing.get_percentile_value(values, l_bound), 2)
+    u_value = round(slicing.get_percentile_value(values, u_bound), 2)
+        
+
+    if soil_value<l_value:
+        slices = np.empty(num_bins+2,dtype=float)
+        slices[0] = soil_value
+        slices[-1] = max_value        
+        slices[1:-1] = np.linspace(l_value, u_value, num_bins)
+        heights = np.empty(slices.shape, slices.dtype)
+        
+        for i in range(len(slices)):
+            diff = abs(bins-slices[i])
+            heights[i] = percentiles[np.argmin(diff)]
+        
+        y = np.empty(heights.shape, heights.dtype)
+        #y[0] = heights[0]
+        for i in range(len(heights)-1):
+            y[i] = heights[i+1]-heights[i]
+            
+        y = y * auto_acre
+
+        print slices
+        print heights
+        print y
+        plt.bar(slices[1:-1], y[1:-1], width = (slices[2]-slices[1])*0.9)
+    else:
+        print ("lower boundary is smaller than soil value, check the image")        
+        
+
+
+def get_percent(input_file, soil_value=0.4, l_bound=0.05, u_bound=0.95,
+                num_bins=5):
+    """
+    it mostly like will only work with NDVI derived from the standard procedure
+    background/masked value should be set to NaN or -1
+    
+    Parameters
+    ----------
+    """
+    
+    img = imio.imread(input_file)
+    img[np.isnan(img)] = -1
+    masked = np.ma.masked_less(img, -0.9999)
+    values = classify.prep_im(masked)
+    max_value = np.max(values)
+    bins, percentiles = slicing.get_percentiles(values)
+
+    slices = np.empty(num_bins+2,dtype=float)
+    slices[0] = soil_value
+    slices[-1] = max_value
+    u_value = round(slicing.get_percentile_value(values, u_bound), 2)
+    l_value = round(slicing.get_percentile_value(values, l_bound), 2)
+    slices[1:-1] = np.linspace(l_value, u_value, num_bins)
+    heights = np.empty(slices.shape, slices.dtype)
+    
+    for i in range(len(slices)):
+        diff = abs(bins-slices[i])
+        heights[i] = percentiles[np.argmin(diff)]
+
+    print slices #[:-2], slices[-1]
+    print heights #[:-2], heights[-1]
