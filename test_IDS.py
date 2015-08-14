@@ -25,6 +25,7 @@ from ..imops import imio
 from ..gis import rastertools
 from ..gen import strops
 from ..cv import classify, slicing
+from ..dbops import finder, loader
 
 
 def gen_imu2(file_path, imufile, imufile2, ext='.tif'):
@@ -452,54 +453,6 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
         imio.imsave(out,stacked)
         
         
-def percent_plot(input_file, auto_acre,
-                 soil_value=0.4, l_bound=0.05, u_bound=0.95, num_bins=5):
-    """        
-    it mostly like will only work with NDVI derived from the standard procedure 
-    background/masked value should be set to NaN or -1
-    
-    Parameters
-    ----------
-    """
-    
-    img = imio.imread(input_file)
-    img[np.isnan(img)] = -1
-    masked = np.ma.masked_less(img, -0.9999)
-    values = classify.prep_im(masked)
-    
-    max_value = np.max(values)
-    bins, percentiles = slicing.get_percentiles(values)
-    l_value = round(slicing.get_percentile_value(values, l_bound), 2)
-    u_value = round(slicing.get_percentile_value(values, u_bound), 2)
-        
-
-    if soil_value<l_value:
-        slices = np.empty(num_bins+2,dtype=float)
-        slices[0] = soil_value
-        slices[-1] = max_value        
-        slices[1:-1] = np.linspace(l_value, u_value, num_bins)
-        heights = np.empty(slices.shape, slices.dtype)
-        
-        for i in range(len(slices)):
-            diff = abs(bins-slices[i])
-            heights[i] = percentiles[np.argmin(diff)]
-        
-        y = np.empty(heights.shape, heights.dtype)
-        #y[0] = heights[0]
-        for i in range(len(heights)-1):
-            y[i] = heights[i+1]-heights[i]
-            
-        y = y * auto_acre
-
-        print slices
-        print heights
-        print y
-        plt.bar(slices[1:-1], y[1:-1], width = (slices[2]-slices[1])*0.9)
-    else:
-        print ("lower boundary is smaller than soil value, check the image")        
-        
-
-
 def get_percent(input_file, soil_value=0.4, l_bound=0.05, u_bound=0.95,
                 num_bins=5):
     """
@@ -531,3 +484,87 @@ def get_percent(input_file, soil_value=0.4, l_bound=0.05, u_bound=0.95,
 
     print slices #[:-2], slices[-1]
     print heights #[:-2], heights[-1]
+    
+    
+def percent_plot(input_file, auto_acre=None,
+                 soil_value=0.4, l_bound=0.02, u_bound=0.9, num_bins=5):
+    """        
+    it mostly like will only work with NDVI derived from the standard procedure 
+    background/masked value should be set to NaN or -1
+    
+    Parameters
+    ----------
+    """
+    
+    img = imio.imread(input_file)
+    img[np.isnan(img)] = -1
+    masked = np.ma.masked_less(img, -0.9999)
+    values = classify.prep_im(masked)
+    
+    max_value = np.max(values)
+    bins, percentiles = slicing.get_percentiles(values)
+    l_value = round(slicing.get_percentile_value(values, l_bound), 2)
+    u_value = round(slicing.get_percentile_value(values, u_bound), 2)
+        
+
+    if soil_value<l_value:
+        slices = np.empty(num_bins+2,dtype=float)
+        slices[0] = soil_value
+        slices[-1] = max_value        
+        slices[1:-1] = np.linspace(l_value, u_value, num_bins)
+        heights = np.empty(slices.shape, slices.dtype)
+                
+        for i in range(len(slices)):
+            diff = abs(bins-slices[i])
+            heights[i] = percentiles[np.argmin(diff)]
+        
+        y = np.empty(heights.shape, heights.dtype)
+        #y[0] = heights[0]
+        for i in range(len(heights)-1):
+            y[i] = heights[i+1]-heights[i]
+            
+        # find total acreage
+        if auto_acre is None:
+            auto_acre = get_acreage_from_filename(input_file)
+        y = y * auto_acre
+
+        print auto_acre
+        print slices
+        print heights
+        print y
+        
+        fig = plt.figure()
+        ax = plt.gca()
+        rects = ax.bar(slices[1:-1], y[1:-1], 
+                       width=(slices[2]-slices[1])*0.9, color='green')
+        ax.set_ylabel('Acres')
+        ax.set_xlabel('NDVI')
+        
+        # attach text labels
+        for rect in rects:
+            height = rect.get_height()
+            ax.text(rect.get_x()+rect.get_width()/2., 1.05*height,
+                    '%.1f'%height, ha='center', va='bottom')
+
+        # set x axis labels
+        ax.set_xticks(slices[1:-1]+(slices[2]-slices[1])*0.45)
+        x_label = ['' for x in range(num_bins)]
+        for i in range(len(slices)-2):
+            x_label[i] = '%.2f'%slices[i+1] + '-' + '%.2f'%slices[i+2]
+        ax.set_xticklabels(x_label)
+        
+        #plt.tight_laybout()
+        fig.canvas.draw()
+    else:
+        print ("lower boundary is smaller than soil value, check the image")        
+        
+
+def get_acreage_from_filename(filename):
+    
+    fid = finder.get_fid_from_filename(filename)
+    
+    db = loader.LoadDb()
+    fields = db.tables['Fields']
+    auto_acre = fields.loc[fid].Auto_acres
+    
+    return auto_acre
