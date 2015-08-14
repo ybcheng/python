@@ -451,63 +451,53 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
                 temp = imio.imread(fou)
                 stacked[:,:,4] = copy.deepcopy(temp)
         imio.imsave(out,stacked)
+       
         
-        
-def get_percent(input_file, soil_value=0.4, l_bound=0.05, u_bound=0.95,
-                num_bins=5):
-    """
-    it mostly like will only work with NDVI derived from the standard procedure
-    background/masked value should be set to NaN or -1
-    
-    Parameters
-    ----------
-    """
-    
-    img = imio.imread(input_file)
-    img[np.isnan(img)] = -1
-    masked = np.ma.masked_less(img, -0.9999)
-    values = classify.prep_im(masked)
-    max_value = np.max(values)
-    bins, percentiles = slicing.get_percentiles(values)
-
-    slices = np.empty(num_bins+2,dtype=float)
-    slices[0] = soil_value
-    slices[-1] = max_value
-    u_value = round(slicing.get_percentile_value(values, u_bound), 2)
-    l_value = round(slicing.get_percentile_value(values, l_bound), 2)
-    slices[1:-1] = np.linspace(l_value, u_value, num_bins)
-    heights = np.empty(slices.shape, slices.dtype)
-    
-    for i in range(len(slices)):
-        diff = abs(bins-slices[i])
-        heights[i] = percentiles[np.argmin(diff)]
-
-    print slices #[:-2], slices[-1]
-    print heights #[:-2], heights[-1]
-    
-    
-def percent_plot(input_file, auto_acre=None,
-                 soil_value=0.4, l_bound=0.02, u_bound=0.9, num_bins=5):
+def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
+                 soil_value=0.4, l_bound=0.05, u_bound=0.9, num_bins=5):
     """        
+    creates a histogram like plot that reports acreage of certain NDVI values
+    by default is plots between 5% percentile and max NDVI values
+    but can be changed by adjust some input parameters
     it mostly like will only work with NDVI derived from the standard procedure 
     background/masked value should be set to NaN or -1
     
     Parameters
     ----------
+    input_file: str
+        full path of NDVI image
+    bg_value: float
+        pixel value of background, needs to be set if it's not -1 or NaN
+    auto_acre: int
+        default is the auto_acre from Fields.csv of database
+    l_value: float
+        lower end of NDVI value of the plot
+    soil_value: float
+        NDVI that's smaller than this value is considered soil / non-veg
+    l_bound: float
+        lower end of NDVI value but expressed as percentile
+    u_bound: float
+        upper end of NDVI value but expressed as percentile
+    num_bins: int
+        number of bars in the chart
     """
     
     img = imio.imread(input_file)
     img[np.isnan(img)] = -1
+    if bg_value is not None:
+        img[img==bg_value] = -1
     masked = np.ma.masked_less(img, -0.9999)
     values = classify.prep_im(masked)
     
     max_value = np.max(values)
     bins, percentiles = slicing.get_percentiles(values)
-    l_value = round(slicing.get_percentile_value(values, l_bound), 2)
     u_value = round(slicing.get_percentile_value(values, u_bound), 2)
-        
-
-    if soil_value<l_value:
+    if l_value is None:
+        l_value = round(slicing.get_percentile_value(values, l_bound), 2)
+    
+    if soil_value>l_value:
+        print ("lower boundary is smaller than soil value, check the image")        
+    else:
         slices = np.empty(num_bins+2,dtype=float)
         slices[0] = soil_value
         slices[-1] = max_value        
@@ -528,7 +518,7 @@ def percent_plot(input_file, auto_acre=None,
             auto_acre = get_acreage_from_filename(input_file)
         y = y * auto_acre
 
-        print auto_acre
+        print auto_acre, ' / ' ,sum(y[1:-1])
         print slices
         print heights
         print y
@@ -554,9 +544,7 @@ def percent_plot(input_file, auto_acre=None,
         ax.set_xticklabels(x_label)
         
         #plt.tight_laybout()
-        fig.canvas.draw()
-    else:
-        print ("lower boundary is smaller than soil value, check the image")        
+        fig.canvas.draw()         
         
 
 def get_acreage_from_filename(filename):
