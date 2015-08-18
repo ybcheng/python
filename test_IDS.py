@@ -457,10 +457,12 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
                  soil_value=0.4, l_bound=0.05, u_bound=0.9, num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
-    by default is plots between 5% percentile and max NDVI values
+    by default it plots between 5% percentile and max NDVI values
     but can be changed by adjust some input parameters
     it mostly like will only work with NDVI derived from the standard procedure 
     background/masked value should be set to NaN or -1
+    
+    !!! acreage report currently not working with sub-fields !!!
     
     Parameters
     ----------
@@ -494,9 +496,11 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     u_value = round(slicing.get_percentile_value(values, u_bound), 2)
     if l_value is None:
         l_value = round(slicing.get_percentile_value(values, l_bound), 2)
-    
+        
     if soil_value>l_value:
         print ("lower boundary is smaller than soil value, check the image")        
+    elif l_value>u_value:
+        print ("lower boundary is larger than upper boundary, check the image")
     else:
         slices = np.empty(num_bins+2,dtype=float)
         slices[0] = soil_value
@@ -544,10 +548,15 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
         ax.set_xticklabels(x_label)
         
         #plt.tight_laybout()
-        fig.canvas.draw()         
+        fig.canvas.draw()
+        fig.show()         
         
 
 def get_acreage_from_filename(filename):
+    """
+    simple function that utilizes the improc infrastructure to
+    find acreage based on an input filename
+    """
     
     fid = finder.get_fid_from_filename(filename)
     
