@@ -527,10 +527,10 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
         lower end of NDVI value of the plot
     soil_value: float
         NDVI that's smaller than this value is considered soil / non-veg
-    l_bound: float
-        lower end of NDVI value but expressed as percentile
-    u_bound: float
-        upper end of NDVI value but expressed as percentile
+    l_bound: int
+        lower end of NDVI value but expressed as percentile (5 means 5%)
+    u_bound: int
+        upper end of NDVI value but expressed as percentile (90 means 90%)
     num_bins: int
         number of bars in the chart
     """
@@ -539,7 +539,7 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     img[np.isnan(img)] = -1
     if bg_value is not None:
         img[img==bg_value] = -1
-    masked = np.ma.masked_less(img, -0.9999)
+    masked = np.ma.masked_less_equal(img, -1)
     values = classify.prep_im(masked)
     
     max_value = np.max(values)
@@ -604,7 +604,7 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
         
 
 def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
-                 soil_value=0.4, l_bound=0.05, u_bound=0.9, num_bins=5):
+                 soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
     by default it plots between 5% percentile and max NDVI values
@@ -626,10 +626,10 @@ def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
         lower end of NDVI value of the plot
     soil_value: float
         NDVI that's smaller than this value is considered soil / non-veg
-    l_bound: float
-        lower end of NDVI value but expressed as percentile
-    u_bound: float
-        upper end of NDVI value but expressed as percentile
+    l_bound: int
+        lower end of NDVI value but expressed as percentile (5 means 5%)
+    u_bound: int
+        upper end of NDVI value but expressed as percentile (90 means 90%)
     num_bins: int
         number of bars in the chart
     """
@@ -638,21 +638,22 @@ def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
     img[np.isnan(img)] = -1
     if bg_value is not None:
         img[img==bg_value] = -1
-    masked = np.ma.masked_less(img, -0.9999)    #masked out background
+    masked = np.ma.masked_less_equal(img, -1)    # masked out background
     values = classify.prep_im(masked)
-    masked_new = np.ma.masked_less(img, soil_value-0.0001)  #masked out all non-veg pixels
-    values_new = classify.prep_im(masked_new)
     
     # find total acreage
     if auto_acre is None:
         auto_acre = get_acreage_from_filename(input_file)
     # find total acreage minus soil
     auto_acre_new=auto_acre*(1-stats.percentileofscore(values,soil_value)/100.0)
-        
-    max_value = np.max(values_new)
-    u_value = stats.scoreatpercentile(values_new, u_bound)
+    
+    masked = np.ma.masked_less(masked, soil_value)  # furhter mask out all non-veg pixels
+    values = classify.prep_im(masked)               # veg-only pixels
+    
+    max_value = np.max(values)
+    u_value = stats.scoreatpercentile(values, u_bound)
     if l_value is None:
-        l_value = stats.scoreatpercentile(values_new, l_bound)
+        l_value = stats.scoreatpercentile(values, l_bound)
         
     slices = np.empty(num_bins+2,dtype=float)
     slices[0] = soil_value
@@ -695,7 +696,7 @@ def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
     for i in range(len(slices)-2):
         x_label[i] = '%.2f'%slices[i+1] + '-' + '%.2f'%slices[i+2]
     ax.set_xticklabels(x_label)
-        
+    
     #plt.tight_laybout()
     fig.canvas.draw()
     fig.show()         
