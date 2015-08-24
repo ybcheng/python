@@ -18,6 +18,8 @@ import pandas as pd
 import numpy as np
 import time
 import copy
+import fiona
+import shapely
 import matplotlib.pyplot as plt
 from scipy import stats
 
@@ -408,6 +410,55 @@ def count_class(image_filename):
         print("sum don't match")
         
         
+def count_class_new(image_filename):
+    """
+    same as above but for the color scheme of new classification images
+    count the pixels of each of the class:
+    blue: (35,67,132)
+    green: (116,196,118)
+    yellow: (255,255,0)
+    red: (253,141,60)
+    
+    Parameters
+    ----------
+    image_filename: str
+        full path of the classified image file
+    """
+    
+    blue=0
+    green=0
+    yellow=0
+    red=0
+    black=0
+    
+    img = imio.imread(image_filename)
+    
+    spectral_axis = imio.guess_spectral_axis(img) 
+    if spectral_axis == 0:
+        img = imio.axshuffle(img)
+        
+    for i in range(0,img.shape[0]):
+        for j in range(0,img.shape[1]):
+            if img[i,j,0] == 35 and img[i,j,1] == 67 and img[i,j,2] == 132:
+                blue = blue + 1
+            if img[i,j,0] == 116 and img[i,j,1] == 196 and img[i,j,2] == 118:
+                green = green + 1
+            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 50:
+                yellow = yellow + 1
+            if img[i,j,0] == 253 and img[i,j,1] == 141 and img[i,j,2] == 60:
+                red = red + 1
+            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
+                black = black + 1
+                
+    print blue, float(blue)/float(blue+green+yellow+red)
+    print green, float(green)/float(blue+green+yellow+red)
+    print yellow, float(yellow)/float(blue+green+yellow+red)
+    print red, float(red)/float(blue+green+yellow+red)
+    
+    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
+        print("sum don't match")
+        
+        
 def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
     """
     designed to stack all five bands together
@@ -454,7 +505,7 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
        
         
 def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
-                 soil_value=0.4, l_bound=0.05, u_bound=0.9, num_bins=5):
+                 soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
     by default it plots between 5% percentile and max NDVI values
@@ -492,10 +543,10 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     values = classify.prep_im(masked)
     
     max_value = np.max(values)
-    bins, percentiles = slicing.get_percentiles(values)
-    u_value = round(slicing.get_percentile_value(values, u_bound), 2)
+    #bins, percentiles = slicing.get_percentiles(values)
+    u_value = stats.scoreatpercentile(values, u_bound)
     if l_value is None:
-        l_value = round(slicing.get_percentile_value(values, l_bound), 2)
+        l_value = stats.scoreatpercentile(values, l_bound)
         
     if soil_value>l_value:
         print ("lower boundary is smaller than soil value, check the image")        
@@ -509,8 +560,8 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
         heights = np.empty(slices.shape, slices.dtype)
                 
         for i in range(len(slices)):
-            diff = abs(bins-slices[i])
-            heights[i] = percentiles[np.argmin(diff)]
+            #diff = abs(bins-slices[i])
+            heights[i] = stats.percentileofscore(values, slices[i]) / 100.0
         
         y = np.empty(heights.shape, heights.dtype)
         #y[0] = heights[0]
@@ -552,6 +603,104 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
         fig.show()         
         
 
+def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
+                 soil_value=0.4, l_bound=0.05, u_bound=0.9, num_bins=5):
+    """        
+    creates a histogram like plot that reports acreage of certain NDVI values
+    by default it plots between 5% percentile and max NDVI values
+    but can be changed by adjust some input parameters
+    it mostly like will only work with NDVI derived from the standard procedure 
+    background/masked value should be set to NaN or -1
+    
+    !!! acreage report currently not working with sub-fields !!!
+    
+    Parameters
+    ----------
+    input_file: str
+        full path of NDVI image
+    bg_value: float
+        pixel value of background, needs to be set if it's not -1 or NaN
+    auto_acre: int
+        default is the auto_acre from Fields.csv of database
+    l_value: float
+        lower end of NDVI value of the plot
+    soil_value: float
+        NDVI that's smaller than this value is considered soil / non-veg
+    l_bound: float
+        lower end of NDVI value but expressed as percentile
+    u_bound: float
+        upper end of NDVI value but expressed as percentile
+    num_bins: int
+        number of bars in the chart
+    """
+    
+    img = imio.imread(input_file)
+    img[np.isnan(img)] = -1
+    if bg_value is not None:
+        img[img==bg_value] = -1
+    masked = np.ma.masked_less(img, -0.9999)    #masked out background
+    values = classify.prep_im(masked)
+    masked_new = np.ma.masked_less(img, soil_value-0.0001)  #masked out all non-veg pixels
+    values_new = classify.prep_im(masked_new)
+    
+    # find total acreage
+    if auto_acre is None:
+        auto_acre = get_acreage_from_filename(input_file)
+    # find total acreage minus soil
+    auto_acre_new=auto_acre*(1-stats.percentileofscore(values,soil_value)/100.0)
+        
+    max_value = np.max(values_new)
+    u_value = stats.scoreatpercentile(values_new, u_bound)
+    if l_value is None:
+        l_value = stats.scoreatpercentile(values_new, l_bound)
+        
+    slices = np.empty(num_bins+2,dtype=float)
+    slices[0] = soil_value
+    slices[-1] = max_value        
+    slices[1:-1] = np.linspace(l_value, u_value, num_bins)
+    heights = np.empty(slices.shape, slices.dtype)
+                
+    for i in range(len(slices)):
+        heights[i] = stats.percentileofscore(values, slices[i]) / 100.0
+        
+    y = np.empty(heights.shape, heights.dtype)
+    #y[0] = heights[0]
+    for i in range(len(heights)-1):
+        y[i] = heights[i+1]-heights[i]
+            
+    # find total acreage
+    y = y * auto_acre_new
+
+    print auto_acre, ' / ' ,sum(y[1:-1])
+    print slices
+    print heights
+    print y
+    
+    fig = plt.figure()
+    ax = plt.gca()
+    rects = ax.bar(slices[1:-1], y[1:-1], 
+                   width=(slices[2]-slices[1])*0.9, color='green')
+    ax.set_ylabel('Acres')
+    ax.set_xlabel('NDVI')
+        
+    # attach text labels
+    for rect in rects:
+        height = rect.get_height()
+        ax.text(rect.get_x()+rect.get_width()/2., 1.05*height,
+                '%.1f'%height, ha='center', va='bottom')
+
+    # set x axis labels
+    ax.set_xticks(slices[1:-1]+(slices[2]-slices[1])*0.45)
+    x_label = ['' for x in range(num_bins)]
+    for i in range(len(slices)-2):
+        x_label[i] = '%.2f'%slices[i+1] + '-' + '%.2f'%slices[i+2]
+    ax.set_xticklabels(x_label)
+        
+    #plt.tight_laybout()
+    fig.canvas.draw()
+    fig.show()         
+        
+
 def get_acreage_from_filename(filename):
     """
     simple function that utilizes the improc infrastructure to
@@ -565,3 +714,23 @@ def get_acreage_from_filename(filename):
     auto_acre = fields.loc[fid].Auto_acres
     
     return auto_acre
+    
+    
+def get_sub_acreage(filename):
+    """
+    simple function that prints out subfield names (from mosaic column)
+    and acreage of a given shapefile
+    """
+    
+    acres_per_sq_deg = 2471050
+    with fiona.open(filename) as polygons:
+        areas = [shapely.geometry.shape(p["geometry"]).area for p in polygons]
+        sub_ids = [p['properties']['mosaic'] for p in polygons]
+    unq_ids = np.unique(sub_ids)
+    areas = np.array(areas) * acres_per_sq_deg
+    unq_areas = np.empty(len(unq_ids), dtype='float')
+    for i in range(len(unq_ids)):
+        for j in range(len(sub_ids)):
+            if unq_ids[i] == sub_ids[j]:
+                unq_areas[i]=unq_areas[i]+float(areas[j])
+        print unq_ids[i], unq_areas[i]         
