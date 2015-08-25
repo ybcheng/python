@@ -504,7 +504,7 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
         imio.imsave(out,stacked)
        
         
-def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
+def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
                  soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
@@ -603,7 +603,7 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
         fig.show()         
         
 
-def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
+def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
                  soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
@@ -613,6 +613,10 @@ def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
     background/masked value should be set to NaN or -1
     
     !!! acreage report currently not working with sub-fields !!!
+    
+    this version takes soil out the does histogram based on statistics. should
+    not have problems like l_value smaller than soil value and etc like the 
+    "old verison" above
     
     Parameters
     ----------
@@ -672,7 +676,7 @@ def percent_plot_v2(input_file, bg_value = None, auto_acre=None, l_value=None,
     # find total acreage
     y = y * auto_acre_new
 
-    print auto_acre, ' / ' ,sum(y[1:-1])
+    print auto_acre, ' / ' ,auto_acre_new, ' / ' ,sum(y[1:-1])
     print slices
     print heights
     print y
