@@ -739,3 +739,33 @@ def get_sub_acreage(filename):
             if unq_ids[i] == sub_ids[j]:
                 unq_areas[i]=unq_areas[i]+float(areas[j])
         print unq_ids[i], unq_areas[i]         
+
+
+def calc_iarr_with_geo(filename, iarr_filename):
+    """
+    simple function that calculates IARR from an image in DN
+    
+    Parameters
+    ----------
+    filename: str
+        full path of input image in DN
+    iarr_filename: str
+        fulll path of output IARR image
+    """
+    
+    image = imio.imread(filename)
+    
+    spectral_axis = imio.guess_spectral_axis(image) 
+    if spectral_axis == 0:
+        image = imio.axshuffle(image)
+    
+    image = np.ma.masked_less_equal(image, 0).astype('float32')
+    iarr = np.zeros(image.shape, dtype = image.dtype)
+    
+    for i in range(image.shape[2]):
+        iarr[:,:,i] = image[:,:,i]/np.mean(image[:,:,i])
+        
+    rastertools.write_geotiff_with_source(filename, iarr,
+            iarr_filename, nodata=-1, compress=False)
+
+    return iarr
