@@ -450,15 +450,30 @@ def count_class_new(image_filename):
             if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
                 black = black + 1
                 
-    print blue, float(blue)/float(blue+green+yellow+red)
-    print green, float(green)/float(blue+green+yellow+red)
-    print yellow, float(yellow)/float(blue+green+yellow+red)
-    print red, float(red)/float(blue+green+yellow+red)
+    print image_filename
+    print "red:", red, float(red)/float(blue+green+yellow+red)
+    print "yellow:", yellow, float(yellow)/float(blue+green+yellow+red)
+    print "green:", green, float(green)/float(blue+green+yellow+red)
+    print "blue:", blue, float(blue)/float(blue+green+yellow+red)
     
     if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
         print("sum don't match")
+    
+    fig = plt.figure()
+    ax = plt.gca()
+    rects = ax.bar([1,2,3,4],
+                   [float(red)/float(blue+green+yellow+red),
+                    float(yellow)/float(blue+green+yellow+red),
+                    float(green)/float(blue+green+yellow+red),
+                    float(blue)/float(blue+green+yellow+red)], width=0.9)
+    rects[0].set_color([0.99,0.55,0.24])
+    rects[1].set_color([1,1,0.2])
+    rects[2].set_color([0.45,0.77,0.46])
+    rects[3].set_color([0.14,0.26,0.52])           
+    ax.set_ylabel('percent')
+    ax.set_xlabel('class')    
         
-        
+
 def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
     """
     designed to stack all five bands together
@@ -685,8 +700,14 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     ax = plt.gca()
     rects = ax.bar(slices[1:-1], y[1:-1], 
                    width=(slices[2]-slices[1])*0.9, color='green')
-    ax.set_ylabel('Acres')
-    ax.set_xlabel('NDVI')
+    fl = input_file.lower()
+    if ("ndvi" in input_file):
+        rects[0].set_color([0.84,0.97,0.88])
+        rects[1].set_color([0.7,0.88,0.67])
+        rects[2].set_color([0.45,0.77,0.42])
+        rects[3].set_color([0.14,0.55,0.11])           
+        ax.set_ylabel('Acres')
+        ax.set_xlabel('NDVI')
         
     # attach text labels
     for rect in rects:
