@@ -701,20 +701,21 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     rects = ax.bar(slices[1:-1], y[1:-1], 
                    width=(slices[2]-slices[1])*0.9, color='green')
     fl = input_file.lower()
-    if ("ndvi" in fl):
-        rects[0].set_color([0.84,0.97,0.88])
-        rects[1].set_color([0.7,0.88,0.67])
-        rects[2].set_color([0.45,0.77,0.42])
-        rects[3].set_color([0.14,0.55,0.11])           
-        ax.set_ylabel('Acres')
-        ax.set_xlabel('NDVI')
-    elif ("chl" in fl):
-        rects[0].set_color([0.84,0.19,0.15])
-        rects[1].set_color([0.99,0.68,0.38])
-        rects[2].set_color([1,1,0.75])
-        rects[3].set_color([0.65,0.85,0.42])           
-        ax.set_ylabel('Acres')
-        ax.set_xlabel('CHL')
+    if num_bins == 5:
+        if ("ndvi" in fl):
+            rects[0].set_color([0.84,0.97,0.88])
+            rects[1].set_color([0.7,0.88,0.67])
+            rects[2].set_color([0.45,0.77,0.42])
+            rects[3].set_color([0.14,0.55,0.11])           
+            ax.set_ylabel('Acres')
+            ax.set_xlabel('NDVI')
+        elif ("chl" in fl):
+            rects[0].set_color([0.84,0.19,0.15])
+            rects[1].set_color([0.99,0.68,0.38])
+            rects[2].set_color([1,1,0.75])
+            rects[3].set_color([0.65,0.85,0.42])           
+            ax.set_ylabel('Acres')
+            ax.set_xlabel('CHL')
         
     # attach text labels
     for rect in rects:
