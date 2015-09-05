@@ -691,6 +691,7 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     # find total acreage
     y = y * auto_acre_new
 
+    print "!!!auto acreage does NOT work with subfields!!!"
     print auto_acre, ' / ' ,auto_acre_new, ' / ' ,sum(y[1:-1])
     print slices
     print heights
