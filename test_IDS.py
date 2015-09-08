@@ -660,6 +660,10 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     masked = np.ma.masked_less_equal(img, -1)    # masked out background
     values = classify.prep_im(masked)
     
+    fl = input_file.lower()
+    if ("chl" in fl and soil_value==0.4):       # this is a little problematic
+        soil_value = 2.0
+        
     # find total acreage
     if auto_acre is None:
         auto_acre = get_acreage_from_filename(input_file)
@@ -674,7 +678,7 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     if l_value is None:
         l_value = stats.scoreatpercentile(values, l_bound)
         
-    slices = np.empty(num_bins+2,dtype=float)
+    slices = np.empty(num_bins+2,dtype=float)  
     slices[0] = soil_value
     slices[-1] = max_value        
     slices[1:-1] = np.linspace(l_value, u_value, num_bins)
@@ -701,7 +705,6 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     ax = plt.gca()
     rects = ax.bar(slices[1:-1], y[1:-1], 
                    width=(slices[2]-slices[1])*0.9, color='green')
-    fl = input_file.lower()
     if num_bins == 5:
         if ("ndvi" in fl):
             rects[0].set_color([0.84,0.97,0.88])
