@@ -662,7 +662,7 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     
     fl = input_file.lower()
     if ("chl" in fl and soil_value==0.4):       # this is a little problematic
-        soil_value = 2.0
+        soil_value = 1.5
         
     # find total acreage
     if auto_acre is None:
