@@ -618,8 +618,9 @@ def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
         fig.show()         
         
 
-def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
-                 soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
+def percent_plot(input_file, bg_value=None, auto_acre=None, auto_acre_new=None,
+                 l_value=None, soil_value=0.4, l_bound=5, u_bound=90, 
+                 num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
     by default it plots between 5% percentile and max NDVI values
@@ -668,7 +669,9 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     if auto_acre is None:
         auto_acre = get_acreage_from_filename(input_file)
     # find total acreage minus soil
-    auto_acre_new=auto_acre*(1-stats.percentileofscore(values,soil_value)/100.0)
+    if auto_acre_new is None:
+        auto_acre_new = auto_acre*(1-stats.percentileofscore(values,soil_value)
+                                   /100.0)
     
     masked = np.ma.masked_less(masked, soil_value)  # furhter mask out all non-veg pixels
     values = classify.prep_im(masked)               # veg-only pixels
@@ -695,6 +698,7 @@ def percent_plot(input_file, bg_value = None, auto_acre=None, l_value=None,
     # find total acreage
     y = y * auto_acre_new
 
+    print os.path.basename(input_file)
     print "!!!auto acreage does NOT work with subfields!!!"
     print auto_acre, ' / ' ,auto_acre_new, ' / ' ,sum(y[1:-1])
     print slices
