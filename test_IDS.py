@@ -684,6 +684,8 @@ def percent_plot(input_file, bg_value=None, auto_acre=None, auto_acre_new=None,
         
     if soil_value > l_value:
         sys.exit("ERROR: lower value smaller than soil Value")
+        #print("ERROR: lower value smaller than soil Value")
+        #return
     elif l_value > u_value:
         sys.exit("ERROR: upper value smaller than lower value")    
     
