@@ -14,6 +14,7 @@ simple functions that operates on IDS images:
 
 import glob
 import os
+import sys
 import pandas as pd
 import numpy as np
 import time
@@ -681,6 +682,11 @@ def percent_plot(input_file, bg_value=None, auto_acre=None, auto_acre_new=None,
     if l_value is None:
         l_value = stats.scoreatpercentile(values, l_bound)
         
+    if soil_value > l_value:
+        sys.exit("ERROR: lower value smaller than soil Value")
+    elif l_value > u_value:
+        sys.exit("ERROR: upper value smaller than lower value")    
+    
     slices = np.empty(num_bins+2,dtype=float)  
     slices[0] = soil_value
     slices[-1] = max_value        
