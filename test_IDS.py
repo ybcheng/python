@@ -684,10 +684,10 @@ def percent_plot(input_file, bg_value=None, auto_acre=None, auto_acre_new=None,
         
     if soil_value > l_value:
         sys.exit("ERROR: lower value smaller than soil Value")
-        #print("ERROR: lower value smaller than soil Value")
-        #return
     elif l_value > u_value:
-        sys.exit("ERROR: upper value smaller than lower value")    
+        sys.exit("ERROR: upper value smaller than lower value")
+        #print("ERROR: upper value smaller than lower Value")
+        #return
     
     slices = np.empty(num_bins+2,dtype=float)  
     slices[0] = soil_value
