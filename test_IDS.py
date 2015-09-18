@@ -814,3 +814,24 @@ def calc_iarr_with_geo(filename, iarr_filename):
             iarr_filename, nodata=-1, compress=False)
 
     return iarr
+    
+    
+def sand_box_chl_classi(filename):
+    """
+    sandbox area for chl image classification
+    
+    Parameters
+    ----------
+    filename: str
+        fulll path of input file
+    """
+    
+    ndvi_img = improc.imops.imio.imread(ndvi_files[1])
+    chl_img = improc.imops.imio.imread(chl_files[1])
+    ndvi_img = np.nan_to_num(ndvi_img)
+    ndvi_img = improc.tests.anisodiff2y3d.anisodiff(ndvi_img, niter=3, kappa=80, gamma=0.2)
+    ndvi_img_max = improc.cv.classify.local_extrema(ndvi_img, find_min=False)
+    uniform = improc.cv.classify.uniform_trees(chl_img, ndvi_img_max, radius=5)
+    improc.gis.rastertools.write_geotiff_with_source(chl_files[4], uniform, 'd:/temp/2015-6-2 Field D uniform.tif', nodata=-1, compress=False)
+    chl_img[~ndvi_img_max] = NaN
+    improc.gis.rastertools.write_geotiff_with_source(chl_files[4], chl_img, 'd:/temp/2015-6-2 field D local_max.tif', nodata=-1, compress=False)
