@@ -830,8 +830,25 @@ def sand_box_chl_classi(filename):
     chl_img = improc.imops.imio.imread(chl_files[1])
     ndvi_img = np.nan_to_num(ndvi_img)
     ndvi_img = improc.tests.anisodiff2y3d.anisodiff(ndvi_img, niter=3, kappa=80, gamma=0.2)
-    ndvi_img_max = improc.cv.classify.local_extrema(ndvi_img, find_min=False)
+    chl_img_max = skimage.feature.peak_local_max(chl_img, min_distance=1, indices=False)
     uniform = improc.cv.classify.uniform_trees(chl_img, ndvi_img_max, radius=5)
     improc.gis.rastertools.write_geotiff_with_source(chl_files[4], uniform, 'd:/temp/2015-6-2 Field D uniform.tif', nodata=-1, compress=False)
     chl_img[~ndvi_img_max] = NaN
     improc.gis.rastertools.write_geotiff_with_source(chl_files[4], chl_img, 'd:/temp/2015-6-2 field D local_max.tif', nodata=-1, compress=False)
+    
+    chl_img = improc.imops.imio.imread(chl_files[0])
+    chl_img = np.nan_to_num(chl_img)
+    chl_img = np.ma.masked_less_equal(chl_img, 0)
+    chl_img[chl_img.mask]=0
+    chl_img = np.uint16(chl_img*1000)
+    selem = skimage.morphology.disk(5)
+    loc_mean = skimage.filters.rank.mean(chl_img, selem)
+    loc_mean = np.float32(loc_mean)/1000.0
+    improc.gis.rastertools.write_geotiff_with_source(chl_files[0], loc_mean, 'd:/temp/2015-9-22 134 Paramount 3 chl5_loc_mean.tif',nodata=0, compress=False)
+    chl_img_max = skimage.feature.peak_local_max(loc_mean, min_distance=3, indices=False)
+    uniform = improc.cv.classify.uniform_trees(loc_mean, chl_img_max, radius=5)
+    improc.gis.rastertools.write_geotiff_with_source(chl_files[0], uniform, 'd:/temp/2015-9-22 134 Paramount 3 chl5_uniform.tif',nodata=0, compress=False)
+    loc_mean[~chl_img_max]=NaN
+    improc.gis.rastertools.write_geotiff_with_source(chl_files[0], loc_mean, 'd:/temp/2015-9-22 134 Paramount 3 chl5_max.tif',nodata=0, compress=False)
+    np.mean(loc_mean[chl_img_max])
+    np.std(loc_mean[chl_img_max])
