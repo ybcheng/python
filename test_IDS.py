@@ -817,7 +817,7 @@ def calc_iarr_with_geo(filename, iarr_filename):
     return iarr
     
 
-def chl_classi(chl_file, selem_size = 4):
+def chl_classi(chl_file, selem_size=4, min_distance=3, radius=7):
     """
     sandbox area for chl image classification
     this version has skimage local mean feature in it
@@ -831,7 +831,7 @@ def chl_classi(chl_file, selem_size = 4):
     chl_img = imio.imread(chl_file)
     chl_img = np.nan_to_num(chl_img)
     chl_img = np.ma.masked_less_equal(chl_img, 0)
-    chl_img[chl_img.mask]=0
+    chl_img[chl_img.mask] = 0
     chl_img = np.uint16(chl_img*1000)
     
     loc_mean_file = chl_file.replace('output', 'color')    
@@ -851,9 +851,10 @@ def chl_classi(chl_file, selem_size = 4):
     #perc_mean = np.float32(perc_mean)/1000.0
     #rastertools.write_geotiff_with_source(chl_file, perc_mean, perc_mean_file, nodata=0, compress=False)
     
-    chl_img_max = skimage.feature.peak_local_max(loc_mean, min_distance=3,
+    chl_img_max = skimage.feature.peak_local_max(loc_mean,
+                                                 min_distance=min_distance,
                                                  indices=False)
-    uniform = classify.uniform_trees(loc_mean, chl_img_max, radius=7)
+    uniform = classify.uniform_trees(loc_mean, chl_img_max, radius=radius)
     rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
                                           nodata=0, compress=False)
     loc_mean[~chl_img_max] = float('NaN')
@@ -863,6 +864,21 @@ def chl_classi(chl_file, selem_size = 4):
     print np.mean(loc_mean[chl_img_max])
     print np.std(loc_mean[chl_img_max])
     
+    uniform = np.nan_to_num(uniform)
+    
+    fig = plt.figure()
+    ax = plt.gca()
+    ax.hist(uniform.flatten(), bins=100)
+    fig.canvas.draw()
+    fig.show()
+    
+    l_lim = raw_input('enter lower limit:')
+    u_lim = raw_input('enter upper limit:')
+    fig = plt.figure()
+    imgplot = plt.imshow(uniform, cmap='spectral_r')
+    imgplot.set_clim(l_lim, u_lim)
+    #plt.colorbar()    
+        
  
 def sand_box_chl_classi_old(filename):
     """
