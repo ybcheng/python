@@ -21,6 +21,7 @@ import time
 import copy
 import fiona
 import shapely
+import skimage
 import matplotlib.pyplot as plt
 from scipy import stats
 
@@ -815,8 +816,55 @@ def calc_iarr_with_geo(filename, iarr_filename):
 
     return iarr
     
+
+def chl_classi(chl_file, selem_size = 4):
+    """
+    sandbox area for chl image classification
+    this version has skimage local mean feature in it
     
-def sand_box_chl_classi(filename):
+    Parameters
+    ----------
+    filename: str
+        fulll path of input file
+    """
+        
+    chl_img = imio.imread(chl_file)
+    chl_img = np.nan_to_num(chl_img)
+    chl_img = np.ma.masked_less_equal(chl_img, 0)
+    chl_img[chl_img.mask]=0
+    chl_img = np.uint16(chl_img*1000)
+    
+    loc_mean_file = chl_file.replace('output', 'color')    
+    loc_mean_file = loc_mean_file.replace('chl', 'chl_loc_mean')
+    uniform_file = chl_file.replace('output', 'color')
+    uniform_file = uniform_file.replace('chl', 'chl_uniform')
+    max_file = chl_file.replace('output', 'color')
+    max_file = max_file.replace('chl', 'chl_max')
+    
+    selem = skimage.morphology.disk(selem_size)
+    loc_mean = skimage.filters.rank.mean(chl_img, selem=selem)
+    loc_mean = np.float32(loc_mean)/1000.0
+    rastertools.write_geotiff_with_source(chl_file, loc_mean, loc_mean_file,
+                                          nodata=0, compress=False)
+    
+    #perc_mean = skimage.filters.rank.mean_percentile(chl_img, selem=selem,p0=.1, p1=.9)
+    #perc_mean = np.float32(perc_mean)/1000.0
+    #rastertools.write_geotiff_with_source(chl_file, perc_mean, perc_mean_file, nodata=0, compress=False)
+    
+    chl_img_max = skimage.feature.peak_local_max(loc_mean, min_distance=3,
+                                                 indices=False)
+    uniform = classify.uniform_trees(loc_mean, chl_img_max, radius=7)
+    rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
+                                          nodata=0, compress=False)
+    loc_mean[~chl_img_max] = float('NaN')
+    rastertools.write_geotiff_with_source(chl_file, loc_mean, max_file,
+                                          nodata=0, compress=False)
+    print np.max(loc_mean[chl_img_max])
+    print np.mean(loc_mean[chl_img_max])
+    print np.std(loc_mean[chl_img_max])
+    
+ 
+def sand_box_chl_classi_old(filename):
     """
     sandbox area for chl image classification
     
@@ -835,20 +883,5 @@ def sand_box_chl_classi(filename):
     improc.gis.rastertools.write_geotiff_with_source(chl_files[4], uniform, 'd:/temp/2015-6-2 Field D uniform.tif', nodata=-1, compress=False)
     chl_img[~ndvi_img_max] = NaN
     improc.gis.rastertools.write_geotiff_with_source(chl_files[4], chl_img, 'd:/temp/2015-6-2 field D local_max.tif', nodata=-1, compress=False)
-    
-    chl_img = improc.imops.imio.imread(chl_files[0])
-    chl_img = np.nan_to_num(chl_img)
-    chl_img = np.ma.masked_less_equal(chl_img, 0)
-    chl_img[chl_img.mask]=0
-    chl_img = np.uint16(chl_img*1000)
-    selem = skimage.morphology.disk(5)
-    loc_mean = skimage.filters.rank.mean(chl_img, selem)
-    loc_mean = np.float32(loc_mean)/1000.0
-    improc.gis.rastertools.write_geotiff_with_source(chl_files[0], loc_mean, 'd:/temp/2015-9-22 134 Paramount 3 chl5_loc_mean.tif',nodata=0, compress=False)
-    chl_img_max = skimage.feature.peak_local_max(loc_mean, min_distance=3, indices=False)
-    uniform = improc.cv.classify.uniform_trees(loc_mean, chl_img_max, radius=5)
-    improc.gis.rastertools.write_geotiff_with_source(chl_files[0], uniform, 'd:/temp/2015-9-22 134 Paramount 3 chl5_uniform.tif',nodata=0, compress=False)
-    loc_mean[~chl_img_max]=NaN
-    improc.gis.rastertools.write_geotiff_with_source(chl_files[0], loc_mean, 'd:/temp/2015-9-22 134 Paramount 3 chl5_max.tif',nodata=0, compress=False)
-    np.mean(loc_mean[chl_img_max])
-    np.std(loc_mean[chl_img_max])
+        
+   
