@@ -191,98 +191,8 @@ def replace_nan(input_dir, output_dir, ext='.tif', repl_num=-1):
         img_file[nan_mask] = repl_num
         rastertools.write_geotiff_with_source(input_file,
                                               img_file, output_file)
+                                    
                                               
-                                              
-def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
-    """
-    simple wrapper for chl_with_geo function to generate
-    output filenames, and generate chl images in the output folder.
-    NOTE: it's a simplified version of improc.prostprocess.gne_ndvi_files
-    
-    Parameters
-    ----------
-    filenames: str
-        Filename of the IDS5 image file
-    in_dir: str
-        directory of the IDS5 images, not full pathname, just registered,
-        masked, or registered masked etc
-    """
-    
-    
-    for filename in filenames:
-        if (filename.endswith(".tif") and ('ids' in filename.lower())):
-            # generate a good output filename
-            #chl_filename = strops.ireplace("IDS", "chl", filename)
-            #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
-            chl_filename = filename.replace('IDS', 'chl')
-            chl_filename = chl_filename.replace(in_dir, 'output')
-            dir_name = os.path.dirname(chl_filename)
-            if not os.path.isdir(dir_name):
-                os.makedirs(dir_name)
-
-            if os.path.exists(chl_filename):
-                if not replace:
-                    continue
-                else:
-                    os.remove(chl_filename)
-            try:
-                chl_with_geo(filename, chl_filename=chl_filename)
-                print("Generated chl for %s" % filename)
-                time.sleep(1)
-            except ValueError:
-                print("Error generating chl for %s" % filename)
-
-
-def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
-                 save_uint=False):
-    """
-    Takes a registered or registered masked IDS file, reads the data and 
-    geo metadata, and writes a new file with chl information and 
-    the geo metadata.
-    NOTE: it's a simplified version of 
-    improc.cameras.tetracam.ndvi_with_geo and cal_ndvi    
-    
-    Parameters
-    ----------
-    image_filename: str
-        Filename of the IDS image file
-    chl_filename: str (opt)
-        Output filename for the chl file 
-
-    Returns
-    -------
-    chl_image: 2darray
-        chl image calculated in the program. 
-    """
-
-
-    image = imio.imread(image_filename)
-    
-    spectral_axis = imio.guess_spectral_axis(image) 
-    if spectral_axis == 0:
-        image = imio.axshuffle(image)
-    
-    #NIR is alwasy the 1st band, 550 can be 3rd or 4th
-    if image.shape[2] == 4 or image.shape[2] == 5:
-        imf_grn = image[:, :, 3].astype('float32')     
-        imf_nir = image[:, :, 0].astype('float32')  
-    elif image.shape[2] == 3:
-        imf_grn = image[:, :, 2].astype('float32')     
-        imf_nir = image[:, :, 0].astype('float32')   
-    else:
-        raise ValueError("Image dimensions do not appear to be correct.")
-        
-    imf_nir = np.ma.masked_equal(imf_nir, 0)
-    chl_image = (imf_nir / imf_grn) - 1.0
-    chl_image[chl_image.mask] = mask_val
-    chl_image = chl_image.astype('float32')
-    
-    rastertools.write_geotiff_with_source(image_filename, chl_image,
-            chl_filename, nodata=-1, compress=False)
-
-    return chl_image
-    
-    
 def empline_cal(image_filename, spectra_filename, output_filename,
                 mask_val = 0):
     """
@@ -362,118 +272,6 @@ def empline_cal_files(input_dir, output_dir, img_ext = '.tif',
     
     for (i, s, o) in zip(input_files, spectra_files, output_files):
         empline_cal(i, s, o, mask_val = mask_val)
-        
-
-def count_class(image_filename):
-    """
-    count the pixels of each of the class:
-    blue: (0,0,255)
-    green: (0,155,0)
-    yellow: (255,255,0)
-    red: (255,0,0)
-    
-    Parameters
-    ----------
-    image_filename: str
-        full path of the classified image file
-    """
-    
-    blue=0
-    green=0
-    yellow=0
-    red=0
-    black=0
-    
-    img = imio.imread(image_filename)
-    
-    spectral_axis = imio.guess_spectral_axis(img) 
-    if spectral_axis == 0:
-        img = imio.axshuffle(img)
-        
-    for i in range(0,img.shape[0]):
-        for j in range(0,img.shape[1]):
-            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 255:
-                blue = blue + 1
-            if img[i,j,0] == 0 and img[i,j,1] == 155 and img[i,j,2] == 0:
-                green = green + 1
-            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 0:
-                yellow = yellow + 1
-            if img[i,j,0] == 255 and img[i,j,1] == 0 and img[i,j,2] == 0:
-                red = red + 1
-            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
-                black = black + 1
-                
-    print blue, float(blue)/float(blue+green+yellow+red)
-    print green, float(green)/float(blue+green+yellow+red)
-    print yellow, float(yellow)/float(blue+green+yellow+red)
-    print red, float(red)/float(blue+green+yellow+red)
-    
-    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
-        print("sum don't match")
-        
-        
-def count_class_new(image_filename):
-    """
-    same as above but for the color scheme of new classification images
-    count the pixels of each of the class:
-    blue: (35,67,132)
-    green: (116,196,118)
-    yellow: (255,255,0)
-    red: (253,141,60)
-    
-    Parameters
-    ----------
-    image_filename: str
-        full path of the classified image file
-    """
-    
-    blue=0
-    green=0
-    yellow=0
-    red=0
-    black=0
-    
-    img = imio.imread(image_filename)
-    
-    spectral_axis = imio.guess_spectral_axis(img) 
-    if spectral_axis == 0:
-        img = imio.axshuffle(img)
-        
-    for i in range(0,img.shape[0]):
-        for j in range(0,img.shape[1]):
-            if img[i,j,0] == 35 and img[i,j,1] == 67 and img[i,j,2] == 132:
-                blue = blue + 1
-            if img[i,j,0] == 116 and img[i,j,1] == 196 and img[i,j,2] == 118:
-                green = green + 1
-            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 50:
-                yellow = yellow + 1
-            if img[i,j,0] == 253 and img[i,j,1] == 141 and img[i,j,2] == 60:
-                red = red + 1
-            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
-                black = black + 1
-                
-    print image_filename
-    print "red:", red, float(red)/float(blue+green+yellow+red)
-    print "yellow:", yellow, float(yellow)/float(blue+green+yellow+red)
-    print "green:", green, float(green)/float(blue+green+yellow+red)
-    print "blue:", blue, float(blue)/float(blue+green+yellow+red)
-    
-    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
-        print("sum don't match")
-    
-    fig = plt.figure()
-    ax = plt.gca()
-    rects = ax.bar([1,2,3,4],
-                   [float(red)/float(blue+green+yellow+red),
-                    float(yellow)/float(blue+green+yellow+red),
-                    float(green)/float(blue+green+yellow+red),
-                    float(blue)/float(blue+green+yellow+red)], width=0.9)
-    rects[0].set_color([0.99,0.55,0.24])
-    rects[1].set_color([1,1,0.2])
-    rects[2].set_color([0.45,0.77,0.46])
-    rects[3].set_color([0.14,0.26,0.52])           
-    ax.set_ylabel('percent')
-    ax.set_xlabel('class')    
         
 
 def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
@@ -815,6 +613,208 @@ def calc_iarr_with_geo(filename, iarr_filename):
             iarr_filename, nodata=-1, compress=False)
 
     return iarr
+    
+
+def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
+    """
+    simple wrapper for chl_with_geo function to generate
+    output filenames, and generate chl images in the output folder.
+    NOTE: it's a simplified version of improc.prostprocess.gne_ndvi_files
+    
+    Parameters
+    ----------
+    filenames: str
+        Filename of the IDS5 image file
+    in_dir: str
+        directory of the IDS5 images, not full pathname, just registered,
+        masked, or registered masked etc
+    """
+    
+    
+    for filename in filenames:
+        if (filename.endswith(".tif") and ('ids' in filename.lower())):
+            # generate a good output filename
+            #chl_filename = strops.ireplace("IDS", "chl", filename)
+            #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
+            chl_filename = filename.replace('IDS', 'chl')
+            chl_filename = chl_filename.replace(in_dir, 'output')
+            dir_name = os.path.dirname(chl_filename)
+            if not os.path.isdir(dir_name):
+                os.makedirs(dir_name)
+
+            if os.path.exists(chl_filename):
+                if not replace:
+                    continue
+                else:
+                    os.remove(chl_filename)
+            try:
+                chl_with_geo(filename, chl_filename=chl_filename)
+                print("Generated chl for %s" % filename)
+                time.sleep(1)
+            except ValueError:
+                print("Error generating chl for %s" % filename)
+
+
+def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
+                 save_uint=False):
+    """
+    Takes a registered or registered masked IDS file, reads the data and 
+    geo metadata, and writes a new file with chl information and 
+    the geo metadata.
+    NOTE: it's a simplified version of 
+    improc.cameras.tetracam.ndvi_with_geo and cal_ndvi    
+    
+    Parameters
+    ----------
+    image_filename: str
+        Filename of the IDS image file
+    chl_filename: str (opt)
+        Output filename for the chl file 
+
+    Returns
+    -------
+    chl_image: 2darray
+        chl image calculated in the program. 
+    """
+
+
+    image = imio.imread(image_filename)
+    
+    spectral_axis = imio.guess_spectral_axis(image) 
+    if spectral_axis == 0:
+        image = imio.axshuffle(image)
+    
+    #NIR is alwasy the 1st band, 550 can be 3rd or 4th
+    if image.shape[2] == 4 or image.shape[2] == 5:
+        imf_grn = image[:, :, 3].astype('float32')     
+        imf_nir = image[:, :, 0].astype('float32')  
+    elif image.shape[2] == 3:
+        imf_grn = image[:, :, 2].astype('float32')     
+        imf_nir = image[:, :, 0].astype('float32')   
+    else:
+        raise ValueError("Image dimensions do not appear to be correct.")
+        
+    imf_nir = np.ma.masked_equal(imf_nir, 0)
+    chl_image = (imf_nir / imf_grn) - 1.0
+    chl_image[chl_image.mask] = mask_val
+    chl_image = chl_image.astype('float32')
+    
+    rastertools.write_geotiff_with_source(image_filename, chl_image,
+            chl_filename, nodata=-1, compress=False)
+
+    return chl_image
+    
+
+def count_class(image_filename):
+    """
+    count the pixels of each of the class:
+    blue: (0,0,255)
+    green: (0,155,0)
+    yellow: (255,255,0)
+    red: (255,0,0)
+    
+    Parameters
+    ----------
+    image_filename: str
+        full path of the classified image file
+    """
+    
+    blue=0
+    green=0
+    yellow=0
+    red=0
+    black=0
+    
+    img = imio.imread(image_filename)
+    
+    spectral_axis = imio.guess_spectral_axis(img) 
+    if spectral_axis == 0:
+        img = imio.axshuffle(img)
+        
+    for i in range(0,img.shape[0]):
+        for j in range(0,img.shape[1]):
+            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 255:
+                blue = blue + 1
+            if img[i,j,0] == 0 and img[i,j,1] == 155 and img[i,j,2] == 0:
+                green = green + 1
+            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 0:
+                yellow = yellow + 1
+            if img[i,j,0] == 255 and img[i,j,1] == 0 and img[i,j,2] == 0:
+                red = red + 1
+            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
+                black = black + 1
+                
+    print blue, float(blue)/float(blue+green+yellow+red)
+    print green, float(green)/float(blue+green+yellow+red)
+    print yellow, float(yellow)/float(blue+green+yellow+red)
+    print red, float(red)/float(blue+green+yellow+red)
+    
+    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
+        print("sum don't match")
+        
+        
+def count_class_new(image_filename):
+    """
+    same as above but for the color scheme of new classification images
+    count the pixels of each of the class:
+    blue: (35,67,132)
+    green: (116,196,118)
+    yellow: (255,255,0)
+    red: (253,141,60)
+    
+    Parameters
+    ----------
+    image_filename: str
+        full path of the classified image file
+    """
+    
+    blue=0
+    green=0
+    yellow=0
+    red=0
+    black=0
+    
+    img = imio.imread(image_filename)
+    
+    spectral_axis = imio.guess_spectral_axis(img) 
+    if spectral_axis == 0:
+        img = imio.axshuffle(img)
+        
+    for i in range(0,img.shape[0]):
+        for j in range(0,img.shape[1]):
+            if img[i,j,0] == 35 and img[i,j,1] == 67 and img[i,j,2] == 132:
+                blue = blue + 1
+            if img[i,j,0] == 116 and img[i,j,1] == 196 and img[i,j,2] == 118:
+                green = green + 1
+            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 50:
+                yellow = yellow + 1
+            if img[i,j,0] == 253 and img[i,j,1] == 141 and img[i,j,2] == 60:
+                red = red + 1
+            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
+                black = black + 1
+                
+    print image_filename
+    print "red:", red, float(red)/float(blue+green+yellow+red)
+    print "yellow:", yellow, float(yellow)/float(blue+green+yellow+red)
+    print "green:", green, float(green)/float(blue+green+yellow+red)
+    print "blue:", blue, float(blue)/float(blue+green+yellow+red)
+    
+    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
+        print("sum don't match")
+    
+    fig = plt.figure()
+    ax = plt.gca()
+    rects = ax.bar([1,2,3,4],
+                   [float(red)/float(blue+green+yellow+red),
+                    float(yellow)/float(blue+green+yellow+red),
+                    float(green)/float(blue+green+yellow+red),
+                    float(blue)/float(blue+green+yellow+red)], width=0.9)
+    rects[0].set_color([0.99,0.55,0.24])
+    rects[1].set_color([1,1,0.2])
+    rects[2].set_color([0.45,0.77,0.46])
+    rects[3].set_color([0.14,0.26,0.52])           
+    ax.set_ylabel('percent')
+    ax.set_xlabel('class')    
     
 
 def chl_classi(chl_file, selem_size=4, min_distance=3, radius=7):
