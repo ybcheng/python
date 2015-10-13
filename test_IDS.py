@@ -30,6 +30,7 @@ from ..gis import rastertools
 from ..gen import strops
 from ..cv import classify, slicing
 from ..dbops import finder, loader
+from . import anisodiff2y3d
 
 
 def gen_imu2(file_path, imufile, imufile2, ext='.tif'):
@@ -817,7 +818,7 @@ def count_class_new(image_filename):
     ax.set_xlabel('class')    
     
 
-def chl_classi(chl_file, selem_size=4, min_distance=3, radius=7):
+def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7):
     """
     sandbox area for chl image classification
     this version has skimage local mean feature in it
@@ -860,9 +861,15 @@ def chl_classi(chl_file, selem_size=4, min_distance=3, radius=7):
     loc_mean[~chl_img_max] = float('NaN')
     rastertools.write_geotiff_with_source(chl_file, loc_mean, max_file,
                                           nodata=0, compress=False)
-    print np.max(loc_mean[chl_img_max])
-    print np.mean(loc_mean[chl_img_max])
-    print np.std(loc_mean[chl_img_max])
+    print 'max', np.max(loc_mean[chl_img_max])
+    print 'mean', np.mean(loc_mean[chl_img_max])
+    print 'std dev', np.std(loc_mean[chl_img_max])
+    print
+    print np.mean(loc_mean[chl_img_max])*.5,np.mean(loc_mean[chl_img_max])*.8
+    print np.mean(loc_mean[chl_img_max])*.8,np.mean(loc_mean[chl_img_max])*.9
+    print np.mean(loc_mean[chl_img_max])*.9,np.mean(loc_mean[chl_img_max])*1.1
+    print np.mean(loc_mean[chl_img_max])*1.1,np.mean(loc_mean[chl_img_max])*1.2
+    print np.mean(loc_mean[chl_img_max])*1.2,np.mean(loc_mean[chl_img_max])*1.5      
     
     uniform = np.nan_to_num(uniform)
     
@@ -880,9 +887,11 @@ def chl_classi(chl_file, selem_size=4, min_distance=3, radius=7):
     #plt.colorbar()    
         
  
-def sand_box_chl_classi_old(filename):
+def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None,
+                       min_distance=3, radius=7):
     """
     sandbox area for chl image classification
+    this version uses skimage local max feature
     
     Parameters
     ----------
@@ -890,14 +899,138 @@ def sand_box_chl_classi_old(filename):
         fulll path of input file
     """
     
-    ndvi_img = improc.imops.imio.imread(ndvi_files[1])
-    chl_img = improc.imops.imio.imread(chl_files[1])
-    ndvi_img = np.nan_to_num(ndvi_img)
-    ndvi_img = improc.tests.anisodiff2y3d.anisodiff(ndvi_img, niter=3, kappa=80, gamma=0.2)
-    chl_img_max = skimage.feature.peak_local_max(chl_img, min_distance=1, indices=False)
-    uniform = improc.cv.classify.uniform_trees(chl_img, ndvi_img_max, radius=5)
-    improc.gis.rastertools.write_geotiff_with_source(chl_files[4], uniform, 'd:/temp/2015-6-2 Field D uniform.tif', nodata=-1, compress=False)
-    chl_img[~ndvi_img_max] = NaN
-    improc.gis.rastertools.write_geotiff_with_source(chl_files[4], chl_img, 'd:/temp/2015-6-2 field D local_max.tif', nodata=-1, compress=False)
+    #ndvi_img = improc.imops.imio.imread(ndvi_files[1])
+    chl_img = imio.imread(chl_file)
+    #ndvi_img = np.nan_to_num(ndvi_img)
+    chl_img = np.nan_to_num(chl_img)
+    #ndvi_img = improc.tests.anisodiff2y3d.anisodiff(ndvi_img, niter=3, kappa=80, gamma=0.2)
+    chl_img = anisodiff2y3d.anisodiff(chl_img, niter=3, kappa=80, gamma=0.2)
+    
+    if uniform_file is None:
+        uniform_file = chl_file.replace('output', 'color/loc_max')
+        uniform_file = uniform_file.replace('chl', 'chl_uniform')
+    else:
+        uniform_file = uniform_file
+    
+    if max_file is None:
+        max_file = chl_file.replace('output', 'color/loc_max')
+        max_file = max_file.replace('chl', 'chl_max')
+    else:
+        max_file = max_file
         
-   
+    chl_img_max = skimage.feature.peak_local_max(chl_img, 
+                                                 min_distance=min_distance,
+                                                 indices=False)    
+    uniform = classify.uniform_trees(chl_img, chl_img_max, radius=radius)
+        
+    print 'max', np.max(chl_img[chl_img_max])
+    print 'mean', np.mean(chl_img[chl_img_max])
+    print 'std dev', np.std(chl_img[chl_img_max])
+    print
+    print np.mean(chl_img[chl_img_max])*.5,np.mean(chl_img[chl_img_max])*.8
+    print np.mean(chl_img[chl_img_max])*.8,np.mean(chl_img[chl_img_max])*.9
+    print np.mean(chl_img[chl_img_max])*.9,np.mean(chl_img[chl_img_max])*1.1
+    print np.mean(chl_img[chl_img_max])*1.1,np.mean(chl_img[chl_img_max])*1.2
+    print np.mean(chl_img[chl_img_max])*1.2,np.mean(chl_img[chl_img_max])*1.5
+        
+    rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
+                                          nodata=-1, compress=False)
+    chl_img[~chl_img_max] = float('NaN')
+    rastertools.write_geotiff_with_source(chl_file, chl_img, max_file,
+                                          nodata=-1, compress=False)
+                                          
+
+def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
+    """
+    Given an chl classification image, makes a colored version
+    this function was a modification from improc.postprocess.colorize_visnir
+
+    Parameters
+    ----------
+    uniform_filename: str
+        Full path to file to recolor
+    num_classes: int
+        How many classes in the image
+    slices_ext: list
+        Pass in your own list of boundaries between slice colors.
+    """
+    
+    if num_classes == 4:
+        colors = [[255, 0, 0], [255, 255, 0], [50, 168, 50],
+                  [0, 0, 255]]
+    elif num_classes == 5:
+        colors = [[255, 0, 0], [255, 140, 0], [255, 255, 0],
+                  [50, 168, 50], [0, 0, 255]]
+    
+    im = imio.imread(uniform_file)
+    out_im = np.zeros(im.shape + (3,), dtype='uint8')
+    #im[np.isnan(im)] = -1
+    
+    mx = imio.imread(max_file)
+    min_mx = np.min(mx[~np.isnan(mx)]) - 0.001
+    max_mx = np.max(mx[~np.isnan(mx)]) + 0.001
+    mean_mx = np.mean(mx[~np.isnan(mx)])
+    std_mx = np.std(mx[~np.isnan(mx)])
+    
+    if slices_ext is None:
+        if num_classes == 4:
+            slices_ext = np.array([min_mx, mean_mx-1.5*std_mx,
+                                   mean_mx-0.5*std_mx, mean_mx+std_mx, max_mx])
+        if num_classes == 5:          
+            slices_ext = np.array([min_mx, mean_mx*0.8, mean_mx*0.9,
+                                   mean_mx*1.1, mean_mx*1.2, max_mx])
+    else:
+        slices_ext = slices_ext
+        
+    print slices_ext    
+    
+    lowers = slices_ext[:-1]
+    uppers = slices_ext[1:]
+    rgb_channels = np.zeros(lowers.shape + (3,), dtype='uint8')
+
+    for i in range(len(colors)):
+        rgb_channels[i, :] = colors[i]
+
+    for i, (l, u) in enumerate(zip(lowers, uppers)):
+        in_range = np.logical_and(im <= u, im > l)
+        out_im[:, :, 0][in_range] = rgb_channels[i, 0]
+        out_im[:, :, 1][in_range] = rgb_channels[i, 1]
+        out_im[:, :, 2][in_range] = rgb_channels[i, 2]
+
+    return out_im
+
+
+def geo_colorize_chl_classi(num_classes, chl_file=None, loc_mean=True, 
+                            uniform_file=None, max_file=None,
+                            out_filename=None, slices_ext=None):
+    """
+    
+    """
+    
+    if chl_file is None:
+        uniform_file = uniform_file
+        max_file = max_file
+    elif loc_mean:
+        uniform_file = chl_file.replace('output', 'color')
+        uniform_file = uniform_file.replace('chl', 'chl_uniform')
+        max_file = chl_file.replace('output', 'color')
+        max_file = max_file.replace('chl', 'chl_max')
+    else:
+        uniform_file = chl_file.replace('output', 'color/loc_max')
+        uniform_file = uniform_file.replace('chl', 'chl_uniform')
+        max_file = chl_file.replace('output', 'color/loc_max')
+        max_file = max_file.replace('chl', 'chl_max')
+    
+    if os.path.exists(uniform_file) and os.path.exists(max_file):
+        out_im = colorize_chl_classi(uniform_file, max_file, num_classes,
+                                 slices_ext=slices_ext)
+    else:
+        sys.exit("file(s) not exist")        
+    
+    if out_filename is None:
+        out_filename = uniform_file.replace('uniform', 'class')
+    else:
+        out_filename = out_filename
+    rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
+    
+    return out_im
