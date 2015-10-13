@@ -818,7 +818,8 @@ def count_class_new(image_filename):
     ax.set_xlabel('class')    
     
 
-def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7):
+def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7,
+                        low_thres=None):
     """
     sandbox area for chl image classification
     this version has skimage local mean feature in it
@@ -831,6 +832,15 @@ def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7):
         
     chl_img = imio.imread(chl_file)
     chl_img = np.nan_to_num(chl_img)
+    
+    labels = np.ones(chl_img.shape, dtype=int)    
+    if low_thres is None:
+        l_thres_mask = np.ma.masked_less_equal(chl_img, 0)
+        labels[l_thres_mask.mask] = 0
+    else:
+        l_thres_mask = np.ma.masked_less_equal(chl_img, low_thres)
+        labels[l_thres_mask.mask] = 0    
+    
     chl_img = np.ma.masked_less_equal(chl_img, 0)
     chl_img[chl_img.mask] = 0
     chl_img = np.uint16(chl_img*1000)
@@ -841,6 +851,9 @@ def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7):
     uniform_file = uniform_file.replace('chl', 'chl_uniform')
     max_file = chl_file.replace('output', 'color')
     max_file = max_file.replace('chl', 'chl_max')
+    log_file = chl_file.replace('output', 'color')
+    log_file = log_file.replace('chl', 'chl_log')
+    log_file = log_file.replace('tif', 'txt')
     
     selem = skimage.morphology.disk(selem_size)
     loc_mean = skimage.filters.rank.mean(chl_img, selem=selem)
@@ -854,7 +867,7 @@ def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7):
     
     chl_img_max = skimage.feature.peak_local_max(loc_mean,
                                                  min_distance=min_distance,
-                                                 indices=False)
+                                                 indices=False,labels=labels)
     uniform = classify.uniform_trees(loc_mean, chl_img_max, radius=radius)
     rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
                                           nodata=0, compress=False)
@@ -870,6 +883,14 @@ def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7):
     print np.mean(loc_mean[chl_img_max])*.9,np.mean(loc_mean[chl_img_max])*1.1
     print np.mean(loc_mean[chl_img_max])*1.1,np.mean(loc_mean[chl_img_max])*1.2
     print np.mean(loc_mean[chl_img_max])*1.2,np.mean(loc_mean[chl_img_max])*1.5      
+    
+    log = open(log_file, 'w')
+    log.write(" selem_size=%s\n min_distance=%s\n" %(selem_size,min_distance)) 
+    log.write(" radius=%s\n low_thres=%s\n" %(radius,low_thres))
+    log.write(" max_value=%s\n" %(np.max(loc_mean[chl_img_max])))
+    log.write(" mean_value=%s\n" %(np.mean(loc_mean[chl_img_max])))
+    log.write(" std_dev=%s\n" %(np.std(loc_mean[chl_img_max])))
+    log.close()    
     
     uniform = np.nan_to_num(uniform)
     
@@ -888,7 +909,7 @@ def chl_classi_loc_mean(chl_file, selem_size=4, min_distance=3, radius=7):
         
  
 def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None,
-                       min_distance=3, radius=7):
+                       min_distance=3, radius=7, low_thres=None):
     """
     sandbox area for chl image classification
     this version uses skimage local max feature
@@ -906,6 +927,14 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None,
     #ndvi_img = improc.tests.anisodiff2y3d.anisodiff(ndvi_img, niter=3, kappa=80, gamma=0.2)
     chl_img = anisodiff2y3d.anisodiff(chl_img, niter=3, kappa=80, gamma=0.2)
     
+    labels = np.ones(chl_img.shape, dtype=int)    
+    if low_thres is None:
+        l_thres_mask = np.ma.masked_less_equal(chl_img, 0)
+        labels[l_thres_mask.mask] = 0
+    else:
+        l_thres_mask = np.ma.masked_less_equal(chl_img, low_thres)
+        labels[l_thres_mask.mask] = 0    
+    
     if uniform_file is None:
         uniform_file = chl_file.replace('output', 'color/loc_max')
         uniform_file = uniform_file.replace('chl', 'chl_uniform')
@@ -917,10 +946,14 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None,
         max_file = max_file.replace('chl', 'chl_max')
     else:
         max_file = max_file
-        
+    
+    log_file = chl_file.replace('output', 'color')
+    log_file = log_file.replace('chl', 'chl_log')
+    log_file = log_file.replace('tif', 'txt')
+    
     chl_img_max = skimage.feature.peak_local_max(chl_img, 
                                                  min_distance=min_distance,
-                                                 indices=False)    
+                                                 indices=False, labels=labels)    
     uniform = classify.uniform_trees(chl_img, chl_img_max, radius=radius)
         
     print 'max', np.max(chl_img[chl_img_max])
@@ -932,7 +965,15 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None,
     print np.mean(chl_img[chl_img_max])*.9,np.mean(chl_img[chl_img_max])*1.1
     print np.mean(chl_img[chl_img_max])*1.1,np.mean(chl_img[chl_img_max])*1.2
     print np.mean(chl_img[chl_img_max])*1.2,np.mean(chl_img[chl_img_max])*1.5
-        
+    
+    log = open(log_file, 'w')
+    log.write(" min_distance=%s\n" %(min_distance)) 
+    log.write(" radius=%s\n low_thres=%s\n" %(radius,low_thres))
+    log.write(" max_value=%s\n" %(np.max(chl_img[chl_img_max])))
+    log.write(" mean_value=%s\n" %(np.mean(chl_img[chl_img_max])))
+    log.write(" std_dev=%s\n" %(np.std(chl_img[chl_img_max])))
+    log.close() 
+    
     rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
                                           nodata=-1, compress=False)
     chl_img[~chl_img_max] = float('NaN')
@@ -956,11 +997,11 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
     """
     
     if num_classes == 4:
-        colors = [[255, 0, 0], [255, 255, 0], [50, 168, 50],
+        colors = [[255, 0, 0], [255, 255, 0], [0, 135, 14],
                   [0, 0, 255]]
     elif num_classes == 5:
-        colors = [[255, 0, 0], [255, 140, 0], [255, 255, 0],
-                  [50, 168, 50], [0, 0, 255]]
+        colors = [[255, 0, 0], [255, 146, 0], [255, 255, 0],
+                  [0, 135, 14], [0, 0, 255]]
     
     im = imio.imread(uniform_file)
     out_im = np.zeros(im.shape + (3,), dtype='uint8')
