@@ -821,16 +821,33 @@ def count_class_new(image_filename):
     
 
 def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
-                        max_file=None, selem_size=4, min_distance=3, radius=7,
-                        labels=False, small_thres=None):
+                        max_file=None, selem_size=4, min_distance=1, radius=7,
+                        labels=False, small_thres=None, quicklook=False):
     """
     sandbox area for chl image classification
     this version has skimage local mean feature in it
     
     Parameters
     ----------
-    filename: str
-        fulll path of input file
+    chl_file: str
+        full path of input chl file
+    loc_mean_file: str
+        full path of output local mean file. Pass desired filename if you don't
+        want to use default filename
+    uniform_file: str
+        full path of output uniform file
+    max_file: str
+        full path of output max file
+    selem_size: int
+        define the size of the neighborhood for calculating local mean
+    min_distance: int
+        minimum distance between two local peak values
+    radius: int
+        size to expand local max value
+    labels: bool
+        optional segmentation file used when finding local max
+    small_thres: in
+        threshold used to get rid of small objects
     """
         
     chl_img = imio.imread(chl_file)
@@ -884,6 +901,10 @@ def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
                                                  labels=bw)
         markers = scipy.ndimage.label(loc_max)[0]
         labels = skimage.morphology.watershed(-distance, markers, mask=bw)
+        label_file = chl_file.replace('output', 'color')
+        label_file = label_file.replace('chl', 'chl_label')
+        rastertools.write_geotiff_with_source(chl_file, labels, label_file,
+                                              nodata=0, compress=False)
         
     if small_thres is None:
         labels = labels
@@ -914,38 +935,52 @@ def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
     log = open(log_file, 'w')
     log.write(" selem_size=%s\n min_distance=%s\n" %(selem_size,min_distance)) 
     log.write(" radius=%s\n" %(radius))
-    log.write(" lables=%s\n small_thres=%s\n" %(labelsYN, small_thres))
+    log.write(" labels=%s\n small_thres=%s\n" %(labelsYN, small_thres))
     log.write(" max_value=%s\n" %(np.max(loc_mean[chl_img_max])))
     log.write(" mean_value=%s\n" %(np.mean(loc_mean[chl_img_max])))
     log.write(" std_dev=%s\n" %(np.std(loc_mean[chl_img_max])))
     log.close()    
     
-    uniform = np.nan_to_num(uniform)
+    #show quicklooks or not    
+    if quicklook == True:
+        uniform = np.nan_to_num(uniform)
     
-    fig = plt.figure()
-    ax = plt.gca()
-    ax.hist(uniform.flatten(), bins=100)
-    fig.canvas.draw()
-    fig.show()
+        fig = plt.figure()
+        ax = plt.gca()
+        ax.hist(uniform.flatten(), bins=100)
+        fig.canvas.draw()
+        fig.show()
     
-    l_lim = raw_input('enter lower limit:')
-    u_lim = raw_input('enter upper limit:')
-    fig = plt.figure()
-    imgplot = plt.imshow(uniform, cmap='spectral_r')
-    imgplot.set_clim(l_lim, u_lim)
-    #plt.colorbar()    
+        l_lim = raw_input('enter lower limit:')
+        u_lim = raw_input('enter upper limit:')
+        fig = plt.figure()
+        imgplot = plt.imshow(uniform, cmap='spectral_r')
+        imgplot.set_clim(l_lim, u_lim)
+        #plt.colorbar()    
         
  
 def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
-                       min_distance=3, labels=False, small_thres=None):
+                       min_distance=1, labels=False, small_thres=None):
     """
     sandbox area for chl image classification
     this version uses skimage local max feature
     
     Parameters
     ----------
-    filename: str
-        fulll path of input file
+    chl_file: str
+        fulll path of input chl file
+    uniform_file: str
+        full path of output uniform file
+    max_file: str
+        fulll path of output local maximum file
+    radius: int
+        size to expand local maximum
+    min_distance: int
+        minimum distance between two local maximum
+    labels: bool
+        optional segmentation file used when finding local maximum
+    small_thres: int
+        threshold for getting rid of small objects
     """
     
     #ndvi_img = improc.imops.imio.imread(ndvi_files[1])
@@ -967,6 +1002,10 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
                                                  labels=bw)
         markers = scipy.ndimage.label(loc_max)[0]
         labels = skimage.morphology.watershed(-distance, markers, mask=bw)
+        label_file = chl_file.replace('output', 'color/loc_max')
+        label_file = label_file.replace('chl', 'chl_label')
+        rastertools.write_geotiff_with_source(chl_file, labels, label_file,
+                                              nodata=0, compress=False)
         
     if small_thres is None:
         labels = labels
@@ -1008,7 +1047,7 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
     
     log = open(log_file, 'w')
     log.write(" min_distance=%s\n radius=%s\n" %(min_distance, radius))
-    log.write(" lables=%s\n small_thres=%s\n" %(labelsYN, small_thres))
+    log.write(" labels=%s\n small_thres=%s\n" %(labelsYN, small_thres))
     log.write(" max_value=%s\n" %(np.max(chl_img[chl_img_max])))
     log.write(" mean_value=%s\n" %(np.mean(chl_img[chl_img_max])))
     log.write(" std_dev=%s\n" %(np.std(chl_img[chl_img_max])))
