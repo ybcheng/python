@@ -35,6 +35,10 @@ from ..dbops import finder, loader
 from . import anisodiff2y3d
 
 
+#==============================================================================
+# this section is mostly utilities for preprocessing and etc
+# various image manipulation functions and empirical line and IARR
+
 def gen_imu2(file_path, imufile, imufile2, ext='.tif'):
     """
     the aligned IDS images from matlab have different file names
@@ -196,6 +200,51 @@ def replace_nan(input_dir, output_dir, ext='.tif', repl_num=-1):
                                               img_file, output_file)
                                     
                                               
+def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
+    """
+    designed to stack all five bands together
+    
+    Parameters
+    ----------
+    input_dir: str
+        directory where nir bands are stored
+    """
+    
+    nir_files = glob.glob(input_dir + '*' + in_ext)
+    output_files = [output_dir + os.path.basename(nir_file) 
+                    for nir_file in nir_files]
+    
+    for i in range(0, len(output_files)):
+        output_files[i] = output_files[i].replace(in_ext, out_ext)
+    
+    red_files = glob.glob(input_dir.replace('IDS NIR', 'IDS Red')+'*'+in_ext)
+    svn_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 700')+'*'+in_ext)
+    fiv_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 550')+'*'+in_ext)
+    fou_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 480')+'*'+in_ext)
+    
+    for (nir, out) in zip(nir_files, output_files):
+        temp = imio.imread(nir)
+        stacked = np.empty(temp.shape + (5,), temp.dtype)
+        stacked[:,:,0] = copy.deepcopy(temp)
+        for red in red_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(red)[0:20]:
+                temp = imio.imread(red)
+                stacked[:,:,1] = copy.deepcopy(temp)
+        for svn in svn_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(svn)[0:20]:
+                temp = imio.imread(svn)
+                stacked[:,:,2] = copy.deepcopy(temp)
+        for fiv in fiv_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(fiv)[0:20]:
+                temp = imio.imread(fiv)
+                stacked[:,:,3] = copy.deepcopy(temp)
+        for fou in fou_files:
+            if os.path.basename(nir)[0:20] == os.path.basename(fou)[0:20]:
+                temp = imio.imread(fou)
+                stacked[:,:,4] = copy.deepcopy(temp)
+        imio.imsave(out,stacked)
+       
+        
 def empline_cal(image_filename, spectra_filename, output_filename,
                 mask_val = 0):
     """
@@ -277,51 +326,130 @@ def empline_cal_files(input_dir, output_dir, img_ext = '.tif',
         empline_cal(i, s, o, mask_val = mask_val)
         
 
-def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
+def calc_iarr_with_geo(filename, iarr_filename):
     """
-    designed to stack all five bands together
+    simple function that calculates IARR from an image in DN
     
     Parameters
     ----------
-    input_dir: str
-        directory where nir bands are stored
+    filename: str
+        full path of input image in DN
+    iarr_filename: str
+        fulll path of output IARR image
     """
     
-    nir_files = glob.glob(input_dir + '*' + in_ext)
-    output_files = [output_dir + os.path.basename(nir_file) 
-                    for nir_file in nir_files]
+    image = imio.imread(filename)
     
-    for i in range(0, len(output_files)):
-        output_files[i] = output_files[i].replace(in_ext, out_ext)
+    spectral_axis = imio.guess_spectral_axis(image) 
+    if spectral_axis == 0:
+        image = imio.axshuffle(image)
     
-    red_files = glob.glob(input_dir.replace('IDS NIR', 'IDS Red')+'*'+in_ext)
-    svn_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 700')+'*'+in_ext)
-    fiv_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 550')+'*'+in_ext)
-    fou_files = glob.glob(input_dir.replace('IDS NIR', 'IDS 480')+'*'+in_ext)
+    image = np.ma.masked_less_equal(image, 0).astype('float32')
+    iarr = np.zeros(image.shape, dtype = image.dtype)
     
-    for (nir, out) in zip(nir_files, output_files):
-        temp = imio.imread(nir)
-        stacked = np.empty(temp.shape + (5,), temp.dtype)
-        stacked[:,:,0] = copy.deepcopy(temp)
-        for red in red_files:
-            if os.path.basename(nir)[0:20] == os.path.basename(red)[0:20]:
-                temp = imio.imread(red)
-                stacked[:,:,1] = copy.deepcopy(temp)
-        for svn in svn_files:
-            if os.path.basename(nir)[0:20] == os.path.basename(svn)[0:20]:
-                temp = imio.imread(svn)
-                stacked[:,:,2] = copy.deepcopy(temp)
-        for fiv in fiv_files:
-            if os.path.basename(nir)[0:20] == os.path.basename(fiv)[0:20]:
-                temp = imio.imread(fiv)
-                stacked[:,:,3] = copy.deepcopy(temp)
-        for fou in fou_files:
-            if os.path.basename(nir)[0:20] == os.path.basename(fou)[0:20]:
-                temp = imio.imread(fou)
-                stacked[:,:,4] = copy.deepcopy(temp)
-        imio.imsave(out,stacked)
-       
+    for i in range(image.shape[2]):
+        iarr[:,:,i] = image[:,:,i]/np.mean(image[:,:,i])
         
+    rastertools.write_geotiff_with_source(filename, iarr,
+            iarr_filename, nodata=-1, compress=False)
+
+    return iarr
+    
+
+#==============================================================================
+# this section is about chl index calculation and a little post processing
+# making histogram like bar chart for reporting
+
+def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
+    """
+    simple wrapper for chl_with_geo function to generate
+    output filenames, and generate chl images in the output folder.
+    NOTE: it's a simplified version of improc.prostprocess.gne_ndvi_files
+    
+    Parameters
+    ----------
+    filenames: str
+        Filename of the IDS5 image file
+    in_dir: str
+        directory of the IDS5 images, not full pathname, just registered,
+        masked, or registered masked etc
+    """
+    
+    
+    for filename in filenames:
+        if (filename.endswith(".tif") and ('ids' in filename.lower())):
+            # generate a good output filename
+            #chl_filename = strops.ireplace("IDS", "chl", filename)
+            #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
+            chl_filename = filename.replace('IDS', 'chl')
+            chl_filename = chl_filename.replace(in_dir, 'output')
+            dir_name = os.path.dirname(chl_filename)
+            if not os.path.isdir(dir_name):
+                os.makedirs(dir_name)
+
+            if os.path.exists(chl_filename):
+                if not replace:
+                    continue
+                else:
+                    os.remove(chl_filename)
+            try:
+                chl_with_geo(filename, chl_filename=chl_filename)
+                print("Generated chl for %s" % filename)
+                time.sleep(1)
+            except ValueError:
+                print("Error generating chl for %s" % filename)
+
+
+def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
+                 save_uint=False):
+    """
+    Takes a registered or registered masked IDS file, reads the data and 
+    geo metadata, and writes a new file with chl information and 
+    the geo metadata.
+    NOTE: it's a simplified version of 
+    improc.cameras.tetracam.ndvi_with_geo and cal_ndvi    
+    
+    Parameters
+    ----------
+    image_filename: str
+        Filename of the IDS image file
+    chl_filename: str (opt)
+        Output filename for the chl file 
+
+    Returns
+    -------
+    chl_image: 2darray
+        chl image calculated in the program. 
+    """
+
+
+    image = imio.imread(image_filename)
+    
+    spectral_axis = imio.guess_spectral_axis(image) 
+    if spectral_axis == 0:
+        image = imio.axshuffle(image)
+    
+    #NIR is alwasy the 1st band, 550 can be 3rd or 4th
+    if image.shape[2] == 4 or image.shape[2] == 5:
+        imf_grn = image[:, :, 3].astype('float32')     
+        imf_nir = image[:, :, 0].astype('float32')  
+    elif image.shape[2] == 3:
+        imf_grn = image[:, :, 2].astype('float32')     
+        imf_nir = image[:, :, 0].astype('float32')   
+    else:
+        raise ValueError("Image dimensions do not appear to be correct.")
+        
+    imf_nir = np.ma.masked_equal(imf_nir, 0)
+    chl_image = (imf_nir / imf_grn) - 1.0
+    chl_image[chl_image.mask] = mask_val
+    chl_image = chl_image.astype('float32')
+    
+    rastertools.write_geotiff_with_source(image_filename, chl_image,
+            chl_filename, nodata=-1, compress=False)
+
+    return chl_image
+    
+
 def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
                  soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
     """        
@@ -588,125 +716,9 @@ def get_sub_acreage(filename):
         print unq_ids[i], unq_areas[i]         
 
 
-def calc_iarr_with_geo(filename, iarr_filename):
-    """
-    simple function that calculates IARR from an image in DN
-    
-    Parameters
-    ----------
-    filename: str
-        full path of input image in DN
-    iarr_filename: str
-        fulll path of output IARR image
-    """
-    
-    image = imio.imread(filename)
-    
-    spectral_axis = imio.guess_spectral_axis(image) 
-    if spectral_axis == 0:
-        image = imio.axshuffle(image)
-    
-    image = np.ma.masked_less_equal(image, 0).astype('float32')
-    iarr = np.zeros(image.shape, dtype = image.dtype)
-    
-    for i in range(image.shape[2]):
-        iarr[:,:,i] = image[:,:,i]/np.mean(image[:,:,i])
-        
-    rastertools.write_geotiff_with_source(filename, iarr,
-            iarr_filename, nodata=-1, compress=False)
-
-    return iarr
-    
-
-def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
-    """
-    simple wrapper for chl_with_geo function to generate
-    output filenames, and generate chl images in the output folder.
-    NOTE: it's a simplified version of improc.prostprocess.gne_ndvi_files
-    
-    Parameters
-    ----------
-    filenames: str
-        Filename of the IDS5 image file
-    in_dir: str
-        directory of the IDS5 images, not full pathname, just registered,
-        masked, or registered masked etc
-    """
-    
-    
-    for filename in filenames:
-        if (filename.endswith(".tif") and ('ids' in filename.lower())):
-            # generate a good output filename
-            #chl_filename = strops.ireplace("IDS", "chl", filename)
-            #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
-            chl_filename = filename.replace('IDS', 'chl')
-            chl_filename = chl_filename.replace(in_dir, 'output')
-            dir_name = os.path.dirname(chl_filename)
-            if not os.path.isdir(dir_name):
-                os.makedirs(dir_name)
-
-            if os.path.exists(chl_filename):
-                if not replace:
-                    continue
-                else:
-                    os.remove(chl_filename)
-            try:
-                chl_with_geo(filename, chl_filename=chl_filename)
-                print("Generated chl for %s" % filename)
-                time.sleep(1)
-            except ValueError:
-                print("Error generating chl for %s" % filename)
-
-
-def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
-                 save_uint=False):
-    """
-    Takes a registered or registered masked IDS file, reads the data and 
-    geo metadata, and writes a new file with chl information and 
-    the geo metadata.
-    NOTE: it's a simplified version of 
-    improc.cameras.tetracam.ndvi_with_geo and cal_ndvi    
-    
-    Parameters
-    ----------
-    image_filename: str
-        Filename of the IDS image file
-    chl_filename: str (opt)
-        Output filename for the chl file 
-
-    Returns
-    -------
-    chl_image: 2darray
-        chl image calculated in the program. 
-    """
-
-
-    image = imio.imread(image_filename)
-    
-    spectral_axis = imio.guess_spectral_axis(image) 
-    if spectral_axis == 0:
-        image = imio.axshuffle(image)
-    
-    #NIR is alwasy the 1st band, 550 can be 3rd or 4th
-    if image.shape[2] == 4 or image.shape[2] == 5:
-        imf_grn = image[:, :, 3].astype('float32')     
-        imf_nir = image[:, :, 0].astype('float32')  
-    elif image.shape[2] == 3:
-        imf_grn = image[:, :, 2].astype('float32')     
-        imf_nir = image[:, :, 0].astype('float32')   
-    else:
-        raise ValueError("Image dimensions do not appear to be correct.")
-        
-    imf_nir = np.ma.masked_equal(imf_nir, 0)
-    chl_image = (imf_nir / imf_grn) - 1.0
-    chl_image[chl_image.mask] = mask_val
-    chl_image = chl_image.astype('float32')
-    
-    rastertools.write_geotiff_with_source(image_filename, chl_image,
-            chl_filename, nodata=-1, compress=False)
-
-    return chl_image
-    
+#==============================================================================
+# this section is related to classification on chl / NDVI image
+# including different ways (loc max / mean) and counting class for reporting
 
 def count_class(image_filename):
     """
@@ -820,8 +832,9 @@ def count_class_new(image_filename):
     ax.set_xlabel('class')    
     
 
-def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
-                        max_file=None, selem_size=4, min_distance=1, radius=7,
+def chl_classi_loc_mean(chl_file, bkg_thres=0.4, 
+                        loc_mean_file=None, uniform_file=None,
+                        max_file=None, selem_size=4, min_distance=3, radius=7,
                         labels=False, small_thres=None, quicklook=False):
     """
     sandbox area for chl image classification
@@ -831,6 +844,8 @@ def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
     ----------
     chl_file: str
         full path of input chl file
+    bkg_thres: float
+        threshold for masking out soil background and other stuff
     loc_mean_file: str
         full path of output local mean file. Pass desired filename if you don't
         want to use default filename
@@ -853,7 +868,7 @@ def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
     chl_img = imio.imread(chl_file)
     chl_img = np.nan_to_num(chl_img)
     
-    chl_img = np.ma.masked_less_equal(chl_img, 0)
+    chl_img = np.ma.masked_less_equal(chl_img, bkg_thres)
     chl_img[chl_img.mask] = 0
     chl_img = np.uint16(chl_img*1000)
     
@@ -912,10 +927,19 @@ def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
         small_selem = np.ones((small_thres, small_thres))
         labels = skimage.morphology.binary_opening(labels, selem=small_selem)
         
-    chl_img_max = skimage.feature.peak_local_max(loc_mean,
-                                                 min_distance=min_distance,
-                                                 exclude_border=True,
-                                                 indices=False, labels=labels)
+    if labels is None:
+        chl_img_max = skimage.feature.peak_local_max(loc_mean,
+                                                     min_distance=min_distance,                                                 
+                                                     exclude_border=True,
+                                                     indices=False,
+                                                     labels=labels)
+    else:
+        chl_img_max = skimage.feature.peak_local_max(loc_mean,
+                                                     min_distance=1,                                                 
+                                                     exclude_border=True,
+                                                     indices=False,
+                                                     labels=labels)
+                                                     
     uniform = classify.uniform_trees(loc_mean, chl_img_max, radius=radius)
     rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
                                           nodata=0, compress=False)
@@ -933,6 +957,7 @@ def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
     print np.mean(loc_mean[chl_img_max])*1.2,np.mean(loc_mean[chl_img_max])*1.5      
     
     log = open(log_file, 'w')
+    log.write(" background threshold=%s\n" %(bkg_thres))    
     log.write(" selem_size=%s\n min_distance=%s\n" %(selem_size,min_distance)) 
     log.write(" radius=%s\n" %(radius))
     log.write(" labels=%s\n small_thres=%s\n" %(labelsYN, small_thres))
@@ -960,7 +985,7 @@ def chl_classi_loc_mean(chl_file, loc_mean_file=None, uniform_file=None,
         
  
 def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
-                       min_distance=1, labels=False, small_thres=None):
+                       min_distance=3, labels=False, small_thres=None):
     """
     sandbox area for chl image classification
     this version uses skimage local max feature
@@ -1029,10 +1054,19 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
     log_file = log_file.replace('chl', 'chl_log')
     log_file = log_file.replace('tif', 'txt')
     
-    chl_img_max = skimage.feature.peak_local_max(chl_img, 
-                                                 min_distance=min_distance,
-                                                 exclude_border=True,
-                                                 indices=False, labels=labels)    
+    if labels is None:
+        chl_img_max = skimage.feature.peak_local_max(loc_mean,
+                                                     min_distance=min_distance,                                                 
+                                                     exclude_border=True,
+                                                     indices=False,
+                                                     labels=labels)
+    else:
+        chl_img_max = skimage.feature.peak_local_max(loc_mean,
+                                                     min_distance=1,                                                 
+                                                     exclude_border=True,
+                                                     indices=False,
+                                                     labels=labels)
+                                                     
     uniform = classify.uniform_trees(chl_img, chl_img_max, radius=radius)
         
     print 'max', np.max(chl_img[chl_img_max])
@@ -1154,4 +1188,3 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, loc_mean=True,
     rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
     
     return out_im
-    
