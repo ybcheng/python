@@ -832,7 +832,7 @@ def count_class_new(image_filename):
     ax.set_xlabel('class')    
     
 
-def chl_classi_loc_mean(chl_file, bkg_thres=0.4, 
+def chl_classi_loc_mean(chl_file, bkg_thres=0.4, ndvi=False,
                         loc_mean_file=None, uniform_file=None,
                         max_file=None, selem_size=4, min_distance=3, radius=7,
                         labels=False, small_thres=None, quicklook=False):
@@ -874,24 +874,24 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.4,
     
     if loc_mean_file is None:
         loc_mean_file = chl_file.replace('output', 'color')
-        loc_mean_file = loc_mean_file.replace('chl', 'chl_loc_mean')
+        if ndvi:
+            loc_mean_file = loc_mean_file.replace('NDVI', 'NDVI_loc_mean')
+        else:
+            loc_mean_file = loc_mean_file.replace('chl', 'chl_loc_mean')
     else:
         loc_mean_file = loc_mean_file
         
     if uniform_file is None:
-        uniform_file = chl_file.replace('output', 'color')
-        uniform_file = uniform_file.replace('chl', 'chl_uniform')
+        uniform_file = loc_mean_file.replace('loc_mean', 'uniform')
     else:
         uniform_file = uniform_file
         
     if max_file is None:
-        max_file = chl_file.replace('output', 'color')
-        max_file = max_file.replace('chl', 'chl_max')
+        max_file = uniform_file.replace('uniform', 'max')
     else:
         max_file = max_file
         
-    log_file = chl_file.replace('output', 'color')
-    log_file = log_file.replace('chl', 'chl_log')
+    log_file = max_file.replace('max', 'log')
     log_file = log_file.replace('tif', 'txt')
     
     selem = skimage.morphology.disk(selem_size)
@@ -916,17 +916,19 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.4,
                                                  labels=bw)
         markers = scipy.ndimage.label(loc_max)[0]
         labels = skimage.morphology.watershed(-distance, markers, mask=bw)
-        label_file = chl_file.replace('output', 'color')
-        label_file = label_file.replace('chl', 'chl_label')
+        label_file = loc_mean_file.replace('loc_mean', 'label')
+        
+        if small_thres is None:
+            labels = labels
+        else:
+            small_selem = np.ones((small_thres, small_thres))
+            small_obj = skimage.morphology.binary_opening(labels,
+                                                          selem=small_selem)
+            labels[~small_obj]=0  
+
         rastertools.write_geotiff_with_source(chl_file, labels, label_file,
-                                              nodata=0, compress=False)
-        
-    if small_thres is None:
-        labels = labels
-    else:
-        small_selem = np.ones((small_thres, small_thres))
-        labels = skimage.morphology.binary_opening(labels, selem=small_selem)
-        
+                                              nodata=0, compress=False)    
+    
     if labels is None:
         chl_img_max = skimage.feature.peak_local_max(loc_mean,
                                                      min_distance=min_distance,                                                 
@@ -935,8 +937,8 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.4,
                                                      labels=labels)
     else:
         chl_img_max = skimage.feature.peak_local_max(loc_mean,
-                                                     min_distance=1,                                                 
-                                                     exclude_border=True,
+                                                     min_distance=min_distance,                                                 
+                                                     exclude_border=False,
                                                      indices=False,
                                                      labels=labels)
                                                      
@@ -984,8 +986,8 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.4,
         #plt.colorbar()    
         
  
-def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
-                       min_distance=3, labels=False, small_thres=None):
+def chl_classi_loc_max(chl_file, ndvi=False, uniform_file=None, max_file=None,
+                       radius=7, min_distance=3, labels=False, small_thres=None):
     """
     sandbox area for chl image classification
     this version uses skimage local max feature
@@ -1028,7 +1030,10 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
         markers = scipy.ndimage.label(loc_max)[0]
         labels = skimage.morphology.watershed(-distance, markers, mask=bw)
         label_file = chl_file.replace('output', 'color/loc_max')
-        label_file = label_file.replace('chl', 'chl_label')
+        if ndvi:
+            label_file = label_file.replace('NDVI', 'NDVI_label')
+        else:
+            label_file = label_file.replace('chl', 'chl_label')
         rastertools.write_geotiff_with_source(chl_file, labels, label_file,
                                               nodata=0, compress=False)
         
@@ -1036,22 +1041,24 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
         labels = labels
     else:
         small_selem = np.ones((small_thres, small_thres))
-        labels = skimage.morphology.binary_opening(labels, selem=small_selem)
+        small_obj = skimage.morphology.binary_opening(labels, selem=small_selem)
+        labels[~small_obj] = 0
         
     if uniform_file is None:
         uniform_file = chl_file.replace('output', 'color/loc_max')
-        uniform_file = uniform_file.replace('chl', 'chl_uniform')
+        if ndvi:
+            uniform_file = uniform_file.replace('NDVI', 'NDVI_uniform')
+        else:
+            uniform_file = uniform_file.replace('chl', 'chl_uniform')
     else:
         uniform_file = uniform_file
     
     if max_file is None:
-        max_file = chl_file.replace('output', 'color/loc_max')
-        max_file = max_file.replace('chl', 'chl_max')
+        max_file = uniform_file.replace('uniform', 'max')
     else:
         max_file = max_file
     
-    log_file = chl_file.replace('output', 'color/loc_max')
-    log_file = log_file.replace('chl', 'chl_log')
+    log_file = max_file.replace('max', 'log')
     log_file = log_file.replace('tif', 'txt')
     
     if labels is None:
@@ -1063,7 +1070,7 @@ def chl_classi_loc_max(chl_file, uniform_file=None, max_file=None, radius=7,
     else:
         chl_img_max = skimage.feature.peak_local_max(loc_mean,
                                                      min_distance=1,                                                 
-                                                     exclude_border=True,
+                                                     exclude_border=False,
                                                      indices=False,
                                                      labels=labels)
                                                      
@@ -1154,8 +1161,8 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
     return out_im
 
 
-def geo_colorize_chl_classi(num_classes, chl_file=None, loc_mean=True, 
-                            uniform_file=None, max_file=None,
+def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
+                            loc_mean=True, uniform_file=None, max_file=None,
                             out_filename=None, slices_ext=None):
     """
     
@@ -1166,14 +1173,20 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, loc_mean=True,
         max_file = max_file
     elif loc_mean:
         uniform_file = chl_file.replace('output', 'color')
-        uniform_file = uniform_file.replace('chl', 'chl_uniform')
-        max_file = chl_file.replace('output', 'color')
-        max_file = max_file.replace('chl', 'chl_max')
+        if ndvi:
+            uniform_file = uniform_file.replace('NDVI', 'NDVI_uniform')
+            max_file = uniform_file.replace('uniform', 'max')
+        else:
+            uniform_file = uniform_file.replace('chl', 'chl_uniform')
+            max_file = uniform_file.replace('uniform', 'max')
     else:
         uniform_file = chl_file.replace('output', 'color/loc_max')
-        uniform_file = uniform_file.replace('chl', 'chl_uniform')
-        max_file = chl_file.replace('output', 'color/loc_max')
-        max_file = max_file.replace('chl', 'chl_max')
+        if ndvi:
+            uniform_file = uniform_file.replace('NDVI', 'NDVI_uniform')
+            max_file = uniform_file.replace('uniform', 'max')
+        else:
+            uniform_file = uniform_file.replace('chl', 'chl_uniform')
+            max_file = uniform_file.replace('uniform', 'max')
     
     if os.path.exists(uniform_file) and os.path.exists(max_file):
         out_im = colorize_chl_classi(uniform_file, max_file, num_classes,
@@ -1188,3 +1201,285 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, loc_mean=True,
     rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
     
     return out_im
+    
+
+def chl_classi_matlab(chl_file, bkg_thres=0.4, meanYN=True, ndvi=False,
+                      uniform_file=None, max_file=None, radius=7,
+                      min_distance=3, labels=False, small_thres=3):
+    """
+    sandbox area for chl image classification
+    this version is to mimic Yibin's matlab program
+    
+    Parameters
+    ----------
+    chl_file: str
+        fulll path of input chl file
+    bkg_thres: float
+        soil or background value to be masked out
+    meanYN: bool
+        if True, then calculate local mean; if False, then calculate local max
+    uniform_file: str
+        full path of output uniform file
+    max_file: str
+        fulll path of output local maximum file
+    radius: int
+        size to expand local maximum
+    min_distance: int
+        minimum distance between two local maximum
+    labels: bool
+        optional segmentation file used when finding local maximum
+    small_thres: int
+        threshold for getting rid of small objects
+    """
+
+    chl_img = imio.imread(chl_file)
+    chl_img = np.nan_to_num(chl_img)    
+    chl_img = np.ma.masked_less_equal(chl_img, bkg_thres)
+    chl_img[chl_img.mask] = 0
+        
+    # perparation of output filenames
+    if meanYN:
+        label_file = chl_file.replace('output', 'color')
+    else:
+        label_file = chl_file.replace('output', 'color/loc_max')
+        
+    if ndvi:
+        label_file = label_file.replace('NDVI', 'NDVI_label')
+    else:
+        label_file = label_file.replace('chl', 'chl_label')
+        
+    if uniform_file is None:
+        uniform_file = label_file.replace('label', 'unifrom')
+    else:
+        uniform_file = uniform_file
+    
+    if max_file is None:
+        max_file = label_file.replace('label', 'max')
+    else:
+        max_file = max_file    
+    
+    # image transformation and segmentation
+    tmp_img = anisodiff2y3d.anisodiff(chl_img, niter=3, kappa=80, gamma=0.2)
+    tmp_img[chl_img.mask]=0
+    bw = skimage.filters.threshold_adaptive(tmp_img, 11)
+    distance = scipy.ndimage.distance_transform_edt(bw)
+    loc_max = skimage.feature.peak_local_max(distance, indices=False,
+                                                 min_distance=min_distance,
+                                                 labels=bw)
+    markers = scipy.ndimage.label(loc_max)[0]
+    labels = skimage.morphology.watershed(-distance, markers, mask=bw)
+    rastertools.write_geotiff_with_source(chl_file, labels, label_file,
+                                          nodata=0, compress=False)
+    chl_img1 = copy.deepcopy(chl_img)
+    chl_img1[~loc_max] = float('NaN')
+    rastertools.write_geotiff_with_source(chl_file, chl_img1, max_file,
+                                          nodata=0, compress=False)
+                                          
+    # calculating local mean/max 
+    small_selem = np.ones((small_thres, small_thres))
+    small_obj = skimage.morphology.binary_opening(labels, selem=small_selem)
+    labels[~small_obj] = 0
+        
+    statCC = skimage.measure.regionprops(labels)
+    uniform = np.zeros(chl_img.shape, dtype=chl_img.dtype)
+    data = np.empty(len(statCC), dtype=chl_img.dtype)
+    
+    for i in range(len(statCC)):
+        bb = statCC[i].bbox
+        if meanYN == True:   # local mean
+            uniform[bb[0]:bb[2], bb[1]:bb[3]] = np.mean(chl_img[bb[0]:bb[2], bb[1]:bb[3]])
+        else:               # local max
+            uniform[bb[0]:bb[2], bb[1]:bb[3]] = np.max(chl_img[bb[0]:bb[2], bb[1]:bb[3]])
+            
+    rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
+                                          nodata=0, compress=False)
+        
+    
+    # connected component analysis
+    
+    #numCC = len(statCC)
+    #vecArea = np.zeros((numCC,1))
+    #vecWdth = np.zeros((numCC, 1))
+    #vecHght = np.zeros((numCC, 1))
+    #vecCntr = np.zeros((numCC, 1))
+    #vecAsp = np.zeros((numCC, 1))
+    #vecExt = np.zeros((numCC, 1))
+    #vecBB = np.zeros((numCC, 4)) 
+
+    #for i in range(numCC):
+    #    vecBB[i, 4] = statCC[i].bbox
+    #    vecWdth[i] = vecBB[2] - vecBB[0] + 1
+    #    vecHght[i] = vecBB[3] - vecBB[1] + 1
+    #    vecArea[i] = statCC[i].area
+    #    vecCntr[i] = statCC[i].centroid
+    #    vecAsp[i] = vecWdth[i] / vecHght[i]
+    #    vecExt[i] = statCC[i].extent
+    
+    
+def chl_classi_loc_mean_v2(chl_file, bkg_thres=0.4, ndvi=False,
+                           loc_mean_file=None, uniform_file=None,
+                           max_file=None, selem_size=4, min_distance=3,
+                           radius=7, labels=False, small_thres=None,
+                           quicklook=False):
+    """
+    sandbox area for chl image classification
+    this version has skimage local mean feature in it
+    this version manually find local max of local mean
+    
+    Parameters
+    ----------
+    chl_file: str
+        full path of input chl file
+    bkg_thres: float
+        threshold for masking out soil background and other stuff
+    loc_mean_file: str
+        full path of output local mean file. Pass desired filename if you don't
+        want to use default filename
+    uniform_file: str
+        full path of output uniform file
+    max_file: str
+        full path of output max file
+    selem_size: int
+        define the size of the neighborhood for calculating local mean
+    min_distance: int
+        minimum distance between two local peak values
+    radius: int
+        size to expand local max value
+    labels: bool
+        optional segmentation file used when finding local max
+    small_thres: in
+        threshold used to get rid of small objects
+    """
+        
+    chl_img = imio.imread(chl_file)
+    chl_img = np.nan_to_num(chl_img)
+    
+    chl_img = np.ma.masked_less_equal(chl_img, bkg_thres)
+    chl_img[chl_img.mask] = 0
+    chl_img = np.uint16(chl_img*1000)
+    
+    if loc_mean_file is None:
+        loc_mean_file = chl_file.replace('output', 'color')
+        if ndvi:
+            loc_mean_file = loc_mean_file.replace('NDVI', 'NDVI_loc_mean')
+        else:
+            loc_mean_file = loc_mean_file.replace('chl', 'chl_loc_mean')
+    else:
+        loc_mean_file = loc_mean_file
+        
+    if uniform_file is None:
+        uniform_file = loc_mean_file.replace('loc_mean', 'uniform')
+    else:
+        uniform_file = uniform_file
+        
+    if max_file is None:
+        max_file = uniform_file.replace('uniform', 'max')
+    else:
+        max_file = max_file
+        
+    log_file = max_file.replace('max', 'log')
+    log_file = log_file.replace('tif', 'txt')
+    
+    selem = skimage.morphology.disk(selem_size)
+    loc_mean = skimage.filters.rank.mean(chl_img, selem=selem)
+    loc_mean = np.float32(loc_mean)/1000.0
+    rastertools.write_geotiff_with_source(chl_file, loc_mean, loc_mean_file,
+                                          nodata=0, compress=False)
+    
+    #perc_mean = skimage.filters.rank.mean_percentile(chl_img, selem=selem,p0=.1, p1=.9)
+    #perc_mean = np.float32(perc_mean)/1000.0
+    #rastertools.write_geotiff_with_source(chl_file, perc_mean, perc_mean_file, nodata=0, compress=False)
+    
+    if labels == False:
+        labels = None
+        labelsYN = False
+    else:
+        labelsYN = True
+        bw = skimage.filters.threshold_adaptive(loc_mean, 11)
+        distance = scipy.ndimage.distance_transform_edt(bw)
+        loc_max = skimage.feature.peak_local_max(distance, indices=False,
+                                                 min_distance=min_distance,
+                                                 labels=bw)
+        markers = scipy.ndimage.label(loc_max)[0]
+        labels = skimage.morphology.watershed(-distance, markers, mask=bw)
+        label_file = loc_mean_file.replace('loc_mean', 'label')
+        
+        if small_thres is None:
+            labels = labels
+        else:
+            small_selem = np.ones((small_thres, small_thres))
+            small_obj = skimage.morphology.binary_opening(labels,
+                                                          selem=small_selem)
+            labels[~small_obj]=0  
+
+        rastertools.write_geotiff_with_source(chl_file, labels, label_file,
+                                              nodata=0, compress=False)    
+    
+    if labels is None:
+        chl_img_max = skimage.feature.peak_local_max(loc_mean,
+                                                     min_distance=min_distance,                                                 
+                                                     exclude_border=True,
+                                                     indices=False,
+                                                     labels=labels)
+    else:
+        # this sectoin manaully finds local max
+        statCC = skimage.measure.regionprops(labels)
+        uniform = np.zeros(chl_img.shape, dtype=loc_mean.dtype)
+        chl_img_max = np.zeros(chl_img.shape, dtype=int)
+        #data = np.empty(len(statCC), dtype=loc_mean.dtype)
+    
+        for i in range(len(statCC)):
+            bb = statCC[i].bbox
+            x1 = bb[0]; y1 = bb[1]; x2 = bb[2]; y2 = bb[3]
+            uniform[x1:x2, y1:y2] = np.max(loc_mean[x1:x2, y1:y2])
+            
+            for j in range(x1, x2+1):   # this part is kind of stupid
+                for k in range(y1, y2+1):
+                    if loc_mean[j,k] == np.max(loc_mean[x1:x2, y1:y2]):
+                        chl_img_max[j,k] = 1
+            
+        chl_img_max = chl_img_max.astype('bool')
+        loc_mean[~chl_img_max] = float('NaN')
+        rastertools.write_geotiff_with_source(chl_file, loc_mean, max_file,
+                                                  nodata=0, compress=False)
+        rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
+                                                  nodata=0, compress=False)
+    
+    print 'max', np.max(loc_mean[chl_img_max])
+    print 'mean', np.mean(loc_mean[chl_img_max])
+    print 'std dev', np.std(loc_mean[chl_img_max])
+    print
+    print np.mean(loc_mean[chl_img_max])*.5,np.mean(loc_mean[chl_img_max])*.8
+    print np.mean(loc_mean[chl_img_max])*.8,np.mean(loc_mean[chl_img_max])*.9
+    print np.mean(loc_mean[chl_img_max])*.9,np.mean(loc_mean[chl_img_max])*1.1
+    print np.mean(loc_mean[chl_img_max])*1.1,np.mean(loc_mean[chl_img_max])*1.2
+    print np.mean(loc_mean[chl_img_max])*1.2,np.mean(loc_mean[chl_img_max])*1.5      
+    
+    log = open(log_file, 'w')
+    log.write(" chl_classi_loc_mean_v2")    
+    log.write(" background threshold=%s\n" %(bkg_thres))    
+    log.write(" selem_size=%s\n min_distance=%s\n" %(selem_size,min_distance)) 
+    log.write(" radius=%s\n" %(radius))
+    log.write(" labels=%s\n small_thres=%s\n" %(labelsYN, small_thres))
+    log.write(" max_value=%s\n" %(np.max(loc_mean[chl_img_max])))
+    log.write(" mean_value=%s\n" %(np.mean(loc_mean[chl_img_max])))
+    log.write(" std_dev=%s\n" %(np.std(loc_mean[chl_img_max])))
+    log.close()    
+    
+    #show quicklooks or not    
+    if quicklook == True:
+        uniform = np.nan_to_num(uniform)
+    
+        fig = plt.figure()
+        ax = plt.gca()
+        ax.hist(uniform.flatten(), bins=100)
+        fig.canvas.draw()
+        fig.show()
+    
+        l_lim = raw_input('enter lower limit:')
+        u_lim = raw_input('enter upper limit:')
+        fig = plt.figure()
+        imgplot = plt.imshow(uniform, cmap='spectral_r')
+        imgplot.set_clim(l_lim, u_lim)
+        #plt.colorbar()    
+        
