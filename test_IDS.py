@@ -316,7 +316,6 @@ def empline_cal_files(input_dir, output_dir, img_ext = '.tif',
         value for masked pixels
     """
 
-
     input_files = glob.glob(input_dir + '*' + img_ext)
     output_files = [output_dir + os.path.basename(input_file) 
                     for input_file in input_files]
@@ -356,49 +355,52 @@ def calc_iarr_with_geo(filename, iarr_filename):
     return iarr
     
 
-def dn_2_rad(dn_filename, rad_filename, int_time=[1.0,1.0,1.0,1.0,1.0],
-             gain=[1.0,1.0,1.0,1.0,1.0],
-             offset=[0.0,0.0,0.0,0.0,0.0]):
+def dn_2_refl(dn_filename, rad_filename, refl_filename,
+              int_time=[1.0,1.0,1.0,1.0,1.0],
+              gain=[1.0,1.0,1.0,1.0,1.0],
+              offset=[0.0,0.0,0.0,0.0,0.0],
+              irrad=[1.0,1.0,1.0,1.0,1.0]):
     """
     """
     
-    image = imio.imread(dn_filename)
+    dn_img = imio.imread(dn_filename)
    
-    spectral_axis = imio.guess_spectral_axis(image) 
+    spectral_axis = imio.guess_spectral_axis(dn_img) 
     if spectral_axis == 0:
-        image = imio.axshuffle(image)
+        dn_img = imio.axshuffle(dn_img)
     
-    image = np.ma.masked_less_equal(image, 0).astype('float32')
-    rad_img = np.zeros(image.shape, dtype=image.dtype)
-    for i in range(image.shape[2]):
-        rad_img[:,:,i] = image[:,:,i]/int_time[i] * gain[i] + offset[i]
-        
-    rad_img[image.mask] = 0.0
-    rastertools.write_geotiff_with_source(dn_filename, rad_img, rad_filename,
-                                          nodata=0, compress=False)
-
-
-def rad_2_refl(rad_filename, refl_filename,
-               irrad=[1.0,1.0,1.0,1.0,1.0]):
-    """
-    """
-    
-    rad_img = imio.imread(rad_filename)
-   
-    spectral_axis = imio.guess_spectral_axis(rad_img) 
-    if spectral_axis == 0:
-        rad_img = imio.axshuffle(rad_img)
-    
-    rad_img = np.ma.masked_less_equal(rad_img, 0).astype('float32')
+    dn_img = np.ma.masked_less_equal(dn_img, 0).astype('float32')
+    rad_img = np.zeros(dn_img.shape, dtype=dn_img.dtype)
     refl_img = np.zeros(rad_img.shape, dtype=rad_img.dtype)
-    for i in range(rad_img.shape[2]):
+    
+    for i in range(dn_img.shape[2]):
+        rad_img[:,:,i] = dn_img[:,:,i]/int_time[i] * gain[i] + offset[i]
         refl_img[:,:,i] = rad_img[:,:,i]/irrad[i]
         
-    refl_img[rad_img.mask] = 0.0
-    rastertools.write_geotiff_with_source(rad_filename, refl_img, refl_filename,
+    rad_img[dn_img.mask] = 0.0
+    refl_img[dn_img.mask] = 0.0
+    rastertools.write_geotiff_with_source(dn_filename, rad_img, rad_filename,
                                           nodata=0, compress=False)
+    rastertools.write_geotiff_with_source(dn_filename, refl_img, refl_filename,
+                                          nodata=0, compress=False)
+                                          
+    return rad_img, refl_img
 
 
+def dn_2_refl_files(input_dir, img_ext = 'tif'):
+    """
+    """
+    
+    dn_files = glob.glob(input_dir + '*' + img_ext)
+    rad_files = [dn_file.replace('IDS', 'RAD')
+                 for dn_file in dn_files]
+    refl_files = [rad_file.replace('RAD', 'REFL')
+                  for rad_file in rad_files]
+                      
+    for (d, rad, refl) in zip(dn_files, rad_files, refl_files):
+        dn_2_refl(d, rad, refl)        
+                  
+                  
 #==============================================================================
 # this section is about chl index calculation and a little post processing
 # making histogram like bar chart for reporting
