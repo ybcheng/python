@@ -350,11 +350,54 @@ def calc_iarr_with_geo(filename, iarr_filename):
     for i in range(image.shape[2]):
         iarr[:,:,i] = image[:,:,i]/np.mean(image[:,:,i])
         
-    rastertools.write_geotiff_with_source(filename, iarr,
-            iarr_filename, nodata=-1, compress=False)
+    rastertools.write_geotiff_with_source(filename, iarr, iarr_filename,
+                                          nodata=-1, compress=False)
 
     return iarr
     
+
+def dn_2_rad(dn_filename, rad_filename, int_time=[1.0,1.0,1.0,1.0,1.0],
+             gain=[1.0,1.0,1.0,1.0,1.0],
+             offset=[0.0,0.0,0.0,0.0,0.0]):
+    """
+    """
+    
+    image = imio.imread(dn_filename)
+   
+    spectral_axis = imio.guess_spectral_axis(image) 
+    if spectral_axis == 0:
+        image = imio.axshuffle(image)
+    
+    image = np.ma.masked_less_equal(image, 0).astype('float32')
+    rad_img = np.zeros(image.shape, dtype=image.dtype)
+    for i in range(image.shape[2]):
+        rad_img[:,:,i] = image[:,:,i]/int_time[i] * gain[i] + offset[i]
+        
+    rad_img[image.mask] = 0.0
+    rastertools.write_geotiff_with_source(dn_filename, rad_img, rad_filename,
+                                          nodata=0, compress=False)
+
+
+def rad_2_refl(rad_filename, refl_filename,
+               irrad=[1.0,1.0,1.0,1.0,1.0]):
+    """
+    """
+    
+    rad_img = imio.imread(rad_filename)
+   
+    spectral_axis = imio.guess_spectral_axis(rad_img) 
+    if spectral_axis == 0:
+        rad_img = imio.axshuffle(rad_img)
+    
+    rad_img = np.ma.masked_less_equal(rad_img, 0).astype('float32')
+    refl_img = np.zeros(rad_img.shape, dtype=rad_img.dtype)
+    for i in range(rad_img.shape[2]):
+        refl_img[:,:,i] = rad_img[:,:,i]/irrad[i]
+        
+    refl_img[rad_img.mask] = 0.0
+    rastertools.write_geotiff_with_source(rad_filename, refl_img, refl_filename,
+                                          nodata=0, compress=False)
+
 
 #==============================================================================
 # this section is about chl index calculation and a little post processing
@@ -374,8 +417,7 @@ def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
         directory of the IDS5 images, not full pathname, just registered,
         masked, or registered masked etc
     """
-    
-    
+        
     for filename in filenames:
         if (filename.endswith(".tif") and ('ids' in filename.lower())):
             # generate a good output filename
@@ -724,7 +766,7 @@ def count_class(image_filename):
     """
     count the pixels of each of the class:
     blue: (0,0,255)
-    green: (0,155,0)
+    green: (0,135,14)
     yellow: (255,255,0)
     red: (255,0,0)
     
@@ -750,7 +792,7 @@ def count_class(image_filename):
         for j in range(0,img.shape[1]):
             if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 255:
                 blue = blue + 1
-            if img[i,j,0] == 0 and img[i,j,1] == 155 and img[i,j,2] == 0:
+            if img[i,j,0] == 0 and img[i,j,1] == 135 and img[i,j,2] == 14:
                 green = green + 1
             if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 0:
                 yellow = yellow + 1
@@ -759,10 +801,10 @@ def count_class(image_filename):
             if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
                 black = black + 1
                 
-    print blue, float(blue)/float(blue+green+yellow+red)
-    print green, float(green)/float(blue+green+yellow+red)
-    print yellow, float(yellow)/float(blue+green+yellow+red)
-    print red, float(red)/float(blue+green+yellow+red)
+    print "blue:", blue, float(blue)/float(blue+green+yellow+red)
+    print "green:", green, float(green)/float(blue+green+yellow+red)
+    print "yellow:", yellow, float(yellow)/float(blue+green+yellow+red)
+    print "red:", red, float(red)/float(blue+green+yellow+red)
     
     if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
         print("sum don't match")
@@ -850,6 +892,9 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
         full path of input chl file
     bkg_thres: float
         threshold for masking out soil background and other stuff
+    ndvi: bool
+        False if used on chl files. It's used to set up output filenames
+        the algorithm is the same
     loc_mean_file: str
         full path of output local mean file. Pass desired filename if you don't
         want to use default filename
@@ -877,8 +922,13 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
     use_uniform: bool
         if True, after manually finds local max, improc.classify.uniform_tree 
         will be used to fill the blocks. if False, segment will be filled manually
+    quicklooks:
+        if True, histogram of uniform file will be displayed, after entering 
+        lower and upper limit, a quicklook of colored uniform file will be displayed
     """
         
+    start_time = time.time()
+    
     # preparation of output filenames    
     if loc_mean_file is None:
         loc_mean_file = chl_file.replace('output', 'color')
@@ -906,12 +956,14 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
     chl_img = imio.imread(chl_file)
     chl_img = np.nan_to_num(chl_img)    
     chl_img = np.ma.masked_less_equal(chl_img, bkg_thres)
-    chl_img[chl_img.mask] = 0
+    chl_img[chl_img.mask] = 0.0
     chl_img = np.uint16(chl_img*1000)
     
     selem = skimage.morphology.disk(selem_size)
-    loc_mean = skimage.filters.rank.mean(chl_img, selem=selem)
+    loc_mean = skimage.filters.rank.mean(chl_img, selem=selem,
+                                         mask=~chl_img.mask)
     loc_mean = np.float32(loc_mean)/1000.0
+    #loc_mean[chl_img.mask] = 0.0
     rastertools.write_geotiff_with_source(chl_file, loc_mean, loc_mean_file,
                                           nodata=0, compress=False)  
     #perc_mean = skimage.filters.rank.mean_percentile(chl_img, selem=selem,p0=.1, p1=.9)
@@ -975,15 +1027,18 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
             chl_img_max = np.zeros(chl_img.shape, dtype=bool)
             #data = np.empty(len(statCC), dtype=loc_mean.dtype)
     
-            for i in range(len(statCC)):    # this part's kind of stupid
+            for i in range(len(statCC)):    # there may be a better way to do this part
                 bb = statCC[i].bbox
                 x1 = bb[0]; y1 = bb[1]; x2 = bb[2]; y2 = bb[3]
                 if statCC[i].area > small_thres**2:
                     uniform[x1:x2, y1:y2] = np.max(loc_mean[x1:x2, y1:y2])
-                    for j in range(x1, x2):
-                        for k in range(y1, y2):
-                            if loc_mean[j,k] == np.max(loc_mean[x1:x2, y1:y2]):
-                                chl_img_max[j,k] = 'True'
+                    tmp = np.ma.masked_equal(loc_mean[x1:x2, y1:y2],
+                                             np.max(loc_mean[x1:x2, y1:y2]))
+                    chl_img_max[x1:x2, y1:y2][tmp.mask] = 'True'                         
+                    #for j in range(x1, x2):
+                    #    for k in range(y1, y2):
+                    #        if loc_mean[j,k] == np.max(loc_mean[x1:x2, y1:y2]):
+                    #            chl_img_max[j,k] = 'True'
                 else:
                     uniform[x1:x2, y1:y2] = 0
                 
@@ -993,22 +1048,26 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
                 uniform = classify.uniform_trees(loc_mean, chl_img_max,
                                              radius=radius)                                             
     
-    uniform[chl_img.mask] = 0
+    uniform[chl_img.mask] = 0.0
     rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
                                           nodata=0, compress=False)
     loc_mean[~chl_img_max] = float('NaN')
     rastertools.write_geotiff_with_source(chl_file, loc_mean, max_file,
                                           nodata=0, compress=False)
 
-    print 'max', np.max(loc_mean[chl_img_max])
-    print 'mean', np.mean(loc_mean[chl_img_max])
-    print 'std dev', np.std(loc_mean[chl_img_max])
-    print
-    print np.mean(loc_mean[chl_img_max])*.5,np.mean(loc_mean[chl_img_max])*.8
-    print np.mean(loc_mean[chl_img_max])*.8,np.mean(loc_mean[chl_img_max])*.9
-    print np.mean(loc_mean[chl_img_max])*.9,np.mean(loc_mean[chl_img_max])*1.1
-    print np.mean(loc_mean[chl_img_max])*1.1,np.mean(loc_mean[chl_img_max])*1.2
-    print np.mean(loc_mean[chl_img_max])*1.2,np.mean(loc_mean[chl_img_max])*1.5      
+    max_of_max = np.max(loc_mean[chl_img_max])
+    mean_of_max = np.mean(loc_mean[chl_img_max])
+    std_of_max = np.std(loc_mean[chl_img_max])
+    print     
+    print "max: %.4f" %(max_of_max)
+    print "mean: %.4f" %(mean_of_max)
+    print "std dev: %.4f" %(std_of_max)
+    print "5 bins:"
+    print "%.4f, %.4f" %(mean_of_max*0.5, mean_of_max*0.8)
+    print "%.4f, %.4f" %(mean_of_max*0.8, mean_of_max*0.9)
+    print "%.4f, %.4f" %(mean_of_max*0.9, mean_of_max*1.1)
+    print "%.4f, %.4f" %(mean_of_max*1.1, mean_of_max*1.2)
+    print "%.4f, %.4f" %(mean_of_max*1.2, mean_of_max*1.5)      
     
     log = open(log_file, 'w')
     log.write(" background_threshold=%s\n" %(bkg_thres))
@@ -1018,9 +1077,10 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
     log.write(" radius=%s\n" %(radius))
     log.write(" labels=%s\n small_thres=%s\n" %(labelsYN, small_thres))
     log.write(" manually_find_max=%s\n" %(manual_find))
-    log.write(" max_value=%s\n" %(np.max(loc_mean[chl_img_max])))
-    log.write(" mean_value=%s\n" %(np.mean(loc_mean[chl_img_max])))
-    log.write(" std_dev=%s\n" %(np.std(loc_mean[chl_img_max])))
+    log.write(" max_value=%.4f\n" %(max_of_max))
+    log.write(" mean_value=%.4f\n" %(mean_of_max))
+    log.write(" std_dev=%.4f\n" %(std_of_max))
+    log.write(" %s seconds" %(time.time() - start_time))    
     log.close()    
     
     #show quicklooks or not    
@@ -1040,8 +1100,11 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
         imgplot.set_clim(l_lim, u_lim)
         #plt.colorbar()    
 
+    print "--- %.2f seconds ---" %(time.time() - start_time)
+    print
 
-def chl_classi_loc_max(chl_file, ndvi=False, uniform_file=None, max_file=None,
+
+def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
                        bkg_thres=0.4, adapt_thres=11, footprint=None, radius=7,
                        min_distance=3, labels=False, small_thres=None):
     """
@@ -1145,15 +1208,19 @@ def chl_classi_loc_max(chl_file, ndvi=False, uniform_file=None, max_file=None,
     rastertools.write_geotiff_with_source(chl_file, chl_img, max_file,
                                           nodata=-1, compress=False)
                                           
-    print 'max', np.max(chl_img[chl_img_max])
-    print 'mean', np.mean(chl_img[chl_img_max])
-    print 'std dev', np.std(chl_img[chl_img_max])
+    max_of_max = np.max(chl_img[chl_img_max])
+    mean_of_max = np.mean(chl_img[chl_img_max])
+    std_of_max = np.std(chl_img[chl_img_max])
+    print "max: ", max_of_max
+    print "mean: ", mean_of_max
+    print "std dev: ", std_of_max
+    print "5 bins: "
+    print mean_of_max*0.5, mean_of_max*0.8
+    print mean_of_max*0.8, mean_of_max*0.9
+    print mean_of_max*0.9, mean_of_max*1.1
+    print mean_of_max*1.1, mean_of_max*1.2
+    print mean_of_max*1.2, mean_of_max*1.5
     print
-    print np.mean(chl_img[chl_img_max])*.5,np.mean(chl_img[chl_img_max])*.8
-    print np.mean(chl_img[chl_img_max])*.8,np.mean(chl_img[chl_img_max])*.9
-    print np.mean(chl_img[chl_img_max])*.9,np.mean(chl_img[chl_img_max])*1.1
-    print np.mean(chl_img[chl_img_max])*1.1,np.mean(chl_img[chl_img_max])*1.2
-    print np.mean(chl_img[chl_img_max])*1.2,np.mean(chl_img[chl_img_max])*1.5
     
     log = open(log_file, 'w')
     log.write(" background_threshold=%s\n" %(bkg_thres))
@@ -1161,9 +1228,9 @@ def chl_classi_loc_max(chl_file, ndvi=False, uniform_file=None, max_file=None,
     log.write(" min_distance=%s\n radius=%s\n" %(min_distance, radius))
     log.write(" labels=%s\n small_thres=%s\n" %(labelsYN, small_thres))
     log.write(" footprint=%s\n" %(footprintYN))
-    log.write(" max_value=%s\n" %(np.max(chl_img[chl_img_max])))
-    log.write(" mean_value=%s\n" %(np.mean(chl_img[chl_img_max])))
-    log.write(" std_dev=%s\n" %(np.std(chl_img[chl_img_max])))
+    log.write(" max_value=%s\n" %(max_of_max))
+    log.write(" mean_value=%s\n" %(mean_of_max))
+    log.write(" std_dev=%s\n" %(std_of_max))
     log.close() 
                                          
 
