@@ -526,105 +526,6 @@ def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
     return chl_image
     
 
-def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
-                 soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
-    """        
-    creates a histogram like plot that reports acreage of certain NDVI values
-    by default it plots between 5% percentile and max NDVI values
-    but can be changed by adjust some input parameters
-    it mostly like will only work with NDVI derived from the standard procedure 
-    background/masked value should be set to NaN or -1
-    
-    !!! acreage report currently not working with sub-fields !!!
-    
-    Parameters
-    ----------
-    input_file: str
-        full path of NDVI image
-    bg_value: float
-        pixel value of background, needs to be set if it's not -1 or NaN
-    auto_acre: int
-        default is the auto_acre from Fields.csv of database
-    l_value: float
-        lower end of NDVI value of the plot
-    soil_value: float
-        NDVI that's smaller than this value is considered soil / non-veg
-    l_bound: int
-        lower end of NDVI value but expressed as percentile (5 means 5%)
-    u_bound: int
-        upper end of NDVI value but expressed as percentile (90 means 90%)
-    num_bins: int
-        number of bars in the chart
-    """
-    
-    img = imio.imread(input_file)
-    img[np.isnan(img)] = -1
-    if bg_value is not None:
-        img[img==bg_value] = -1
-    masked = np.ma.masked_less_equal(img, -1)
-    values = classify.prep_im(masked)
-    
-    max_value = np.max(values)
-    #bins, percentiles = slicing.get_percentiles(values)
-    u_value = stats.scoreatpercentile(values, u_bound)
-    if l_value is None:
-        l_value = stats.scoreatpercentile(values, l_bound)
-        
-    if soil_value>l_value:
-        print ("lower boundary is smaller than soil value, check the image")        
-    elif l_value>u_value:
-        print ("lower boundary is larger than upper boundary, check the image")
-    else:
-        slices = np.empty(num_bins+2,dtype=float)
-        slices[0] = soil_value
-        slices[-1] = max_value        
-        slices[1:-1] = np.linspace(l_value, u_value, num_bins)
-        heights = np.empty(slices.shape, slices.dtype)
-                
-        for i in range(len(slices)):
-            #diff = abs(bins-slices[i])
-            heights[i] = stats.percentileofscore(values, slices[i]) / 100.0
-        
-        y = np.empty(heights.shape, heights.dtype)
-        #y[0] = heights[0]
-        for i in range(len(heights)-1):
-            y[i] = heights[i+1]-heights[i]
-            
-        # find total acreage
-        if auto_acre is None:
-            auto_acre = get_acreage_from_filename(input_file)
-        y = y * auto_acre
-
-        print auto_acre, ' / ' ,sum(y[1:-1])
-        print slices
-        print heights
-        print y
-        
-        fig = plt.figure()
-        ax = plt.gca()
-        rects = ax.bar(slices[1:-1], y[1:-1], 
-                       width=(slices[2]-slices[1])*0.9, color='green')
-        ax.set_ylabel('Acres')
-        ax.set_xlabel('NDVI')
-        
-        # attach text labels
-        for rect in rects:
-            height = rect.get_height()
-            ax.text(rect.get_x()+rect.get_width()/2., 1.05*height,
-                    '%.1f'%height, ha='center', va='bottom')
-
-        # set x axis labels
-        ax.set_xticks(slices[1:-1]+(slices[2]-slices[1])*0.45)
-        x_label = ['' for x in range(num_bins)]
-        for i in range(len(slices)-2):
-            x_label[i] = '%.2f'%slices[i+1] + '-' + '%.2f'%slices[i+2]
-        ax.set_xticklabels(x_label)
-        
-        #plt.tight_laybout()
-        fig.canvas.draw()
-        fig.show()         
-        
-
 def percent_plot(input_file, bg_value=None, auto_acre=None, auto_acre_new=None,
                  l_value=None, soil_value=0.4, l_bound=5, u_bound=90, 
                  num_bins=5):
@@ -1322,6 +1223,105 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
 
 #==============================================================================
 # this section is for old stuff and sandbox
+
+def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
+                 soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
+    """        
+    creates a histogram like plot that reports acreage of certain NDVI values
+    by default it plots between 5% percentile and max NDVI values
+    but can be changed by adjust some input parameters
+    it mostly like will only work with NDVI derived from the standard procedure 
+    background/masked value should be set to NaN or -1
+    
+    !!! acreage report currently not working with sub-fields !!!
+    
+    Parameters
+    ----------
+    input_file: str
+        full path of NDVI image
+    bg_value: float
+        pixel value of background, needs to be set if it's not -1 or NaN
+    auto_acre: int
+        default is the auto_acre from Fields.csv of database
+    l_value: float
+        lower end of NDVI value of the plot
+    soil_value: float
+        NDVI that's smaller than this value is considered soil / non-veg
+    l_bound: int
+        lower end of NDVI value but expressed as percentile (5 means 5%)
+    u_bound: int
+        upper end of NDVI value but expressed as percentile (90 means 90%)
+    num_bins: int
+        number of bars in the chart
+    """
+    
+    img = imio.imread(input_file)
+    img[np.isnan(img)] = -1
+    if bg_value is not None:
+        img[img==bg_value] = -1
+    masked = np.ma.masked_less_equal(img, -1)
+    values = classify.prep_im(masked)
+    
+    max_value = np.max(values)
+    #bins, percentiles = slicing.get_percentiles(values)
+    u_value = stats.scoreatpercentile(values, u_bound)
+    if l_value is None:
+        l_value = stats.scoreatpercentile(values, l_bound)
+        
+    if soil_value>l_value:
+        print ("lower boundary is smaller than soil value, check the image")        
+    elif l_value>u_value:
+        print ("lower boundary is larger than upper boundary, check the image")
+    else:
+        slices = np.empty(num_bins+2,dtype=float)
+        slices[0] = soil_value
+        slices[-1] = max_value        
+        slices[1:-1] = np.linspace(l_value, u_value, num_bins)
+        heights = np.empty(slices.shape, slices.dtype)
+                
+        for i in range(len(slices)):
+            #diff = abs(bins-slices[i])
+            heights[i] = stats.percentileofscore(values, slices[i]) / 100.0
+        
+        y = np.empty(heights.shape, heights.dtype)
+        #y[0] = heights[0]
+        for i in range(len(heights)-1):
+            y[i] = heights[i+1]-heights[i]
+            
+        # find total acreage
+        if auto_acre is None:
+            auto_acre = get_acreage_from_filename(input_file)
+        y = y * auto_acre
+
+        print auto_acre, ' / ' ,sum(y[1:-1])
+        print slices
+        print heights
+        print y
+        
+        fig = plt.figure()
+        ax = plt.gca()
+        rects = ax.bar(slices[1:-1], y[1:-1], 
+                       width=(slices[2]-slices[1])*0.9, color='green')
+        ax.set_ylabel('Acres')
+        ax.set_xlabel('NDVI')
+        
+        # attach text labels
+        for rect in rects:
+            height = rect.get_height()
+            ax.text(rect.get_x()+rect.get_width()/2., 1.05*height,
+                    '%.1f'%height, ha='center', va='bottom')
+
+        # set x axis labels
+        ax.set_xticks(slices[1:-1]+(slices[2]-slices[1])*0.45)
+        x_label = ['' for x in range(num_bins)]
+        for i in range(len(slices)-2):
+            x_label[i] = '%.2f'%slices[i+1] + '-' + '%.2f'%slices[i+2]
+        ax.set_xticklabels(x_label)
+        
+        #plt.tight_laybout()
+        fig.canvas.draw()
+        fig.show()         
+        
 
     #some previously tried ways to count
     #not really useful, just for record keeping    
