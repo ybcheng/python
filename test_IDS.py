@@ -26,6 +26,7 @@ import skimage
 import cv2
 import matplotlib.pyplot as plt
 from scipy import stats
+from skimage import filters, morphology, feature
 
 from ..imops import imio
 from ..gis import rastertools
@@ -361,6 +362,25 @@ def dn_2_refl(dn_filename, rad_filename, refl_filename,
               offset=[0.0,0.0,0.0,0.0,0.0],
               irrad=[1.0,1.0,1.0,1.0,1.0]):
     """
+    function that transfer dn to radiance and reflectance using calibration 
+    coefficients and simulated irradiance
+    
+    Parameters
+    ----------
+    dn_filename: str
+        full path of input image in DN
+    rad_filename: str
+        fulll path of output radiance image
+    refl_filename: str
+        full path of output reflectance image
+    int_time: float array
+        integration time
+    gain: float array
+        calibration coefficient
+    offset: float array
+        calibration coefficient
+    irrad: float array
+        simulated irradiance 
     """
     
     dn_img = imio.imread(dn_filename)
@@ -389,6 +409,14 @@ def dn_2_refl(dn_filename, rad_filename, refl_filename,
 
 def dn_2_refl_files(input_dir, img_ext = 'tif'):
     """
+    simple wrapper to transfer DN to radiance and reflectance on multiple files
+    
+    Parameters
+    ----------
+    input_dir: str
+        directory that has all the input files
+    img_ext: str
+        extension of input files
     """
     
     dn_files = glob.glob(input_dir + '*' + img_ext)
@@ -405,7 +433,7 @@ def dn_2_refl_files(input_dir, img_ext = 'tif'):
 # this section is about chl index calculation and a little post processing
 # making histogram like bar chart for reporting
 
-def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
+def gen_chl_files(filenames, in_dir, unit='ids', dummy=None, replace=True):
     """
     simple wrapper for chl_with_geo function to generate
     output filenames, and generate chl images in the output folder.
@@ -418,14 +446,18 @@ def gen_chl_files(filenames, in_dir, dummy=None, replace=True):
     in_dir: str
         directory of the IDS5 images, not full pathname, just registered,
         masked, or registered masked etc
+    unit: str
+        DN files, unit='ids'
+        radiance files, unit='rad'
+        reflectanc files, unit='refl'
     """
         
     for filename in filenames:
-        if (filename.endswith(".tif") and ('ids' in filename.lower())):
+        if (filename.endswith(".tif") and (unit in filename.lower())):
             # generate a good output filename
             #chl_filename = strops.ireplace("IDS", "chl", filename)
             #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
-            chl_filename = filename.replace('IDS', 'chl')
+            chl_filename = filename.replace(unit.upper(), 'CHL')
             chl_filename = chl_filename.replace(in_dir, 'output')
             dir_name = os.path.dirname(chl_filename)
             if not os.path.isdir(dir_name):
@@ -764,123 +796,76 @@ def get_sub_acreage(filename):
 # this section is related to classification on chl / NDVI image
 # including different ways (loc max / mean) and counting class for reporting
 
-def count_class(image_filename):
+def count_class(image_filename, plots=True,
+        colors=[[255,0,0],[255,255,0],[0,135,14],[0,0,255],[0,0,0]]):
     """
-    count the pixels of each of the class:
-    blue: (0,0,255)
-    green: (0,135,14)
-    yellow: (255,255,0)
-    red: (255,0,0)
+    count the pixels of each of the class. report counts, percentage and 
+    a summary bar chart
     
     Parameters
     ----------
     image_filename: str
         full path of the classified image file
+    plots: bool
+        show a bar chart or not
+    colors: numpy array
+        rgb code of the classes followed by black [0,0,0] 
+    color examples:
+        red: [255,0,0]
+        yellow: [255,255,0]
+        green: [0,135,14]
+        blue: [0,0,255]
+        black: [0, 0, 0]
+        
+        red: [253,141,60]
+        yellow: [255,255,0]
+        green: [116,196,118]
+        blue: [35,67,132]
+        
+        red: [255, 0, 0]
+        orange: [255, 146, 0]
+        yellow: [255, 255, 0]
+        green: [0, 135, 14]
+        blue: [0, 0, 255]
     """
     
-    blue=0
-    green=0
-    yellow=0
-    red=0
-    black=0
-    
     img = imio.imread(image_filename)
-    
     spectral_axis = imio.guess_spectral_axis(img) 
     if spectral_axis == 0:
         img = imio.axshuffle(img)
-        
-    for i in range(0,img.shape[0]):
-        for j in range(0,img.shape[1]):
-            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 255:
-                blue = blue + 1
-            if img[i,j,0] == 0 and img[i,j,1] == 135 and img[i,j,2] == 14:
-                green = green + 1
-            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 0:
-                yellow = yellow + 1
-            if img[i,j,0] == 255 and img[i,j,1] == 0 and img[i,j,2] == 0:
-                red = red + 1
-            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
-                black = black + 1
-                
-    print "blue:", blue, float(blue)/float(blue+green+yellow+red)
-    print "green:", green, float(green)/float(blue+green+yellow+red)
-    print "yellow:", yellow, float(yellow)/float(blue+green+yellow+red)
-    print "red:", red, float(red)/float(blue+green+yellow+red)
     
-    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
+    colors = np.asarray(colors)
+    counts = np.zeros(colors.shape[0], dtype='uint')
+    heights = np.zeros(counts.shape[0]-1, dtype='float32')
+
+    for i in range(len(counts)):
+        tmp = ((img[:,:,0]==colors[i,0])*(img[:,:,1]==colors[i,1])*
+               (img[:,:,2]==colors[i,2]))
+        counts[i] = len(tmp[tmp])
+        
+    for i in range(len(counts)-1):
+        heights[i] = float(counts[i])/float(sum(counts[:-1]))
+        print "color%s: %s, %.4f" %(i, counts[i], heights[i])
+           
+    if img.shape[0]*img.shape[1] != sum(counts):
         print("sum don't match")
         
+    if plots:
+        fig = plt.figure()
+        ax = plt.gca()
+        rects = ax.bar(np.arange(len(heights)), heights, width=0.9)
+        for i in range(len(heights)):
+            rects[i].set_color(colors[i,:].astype('float32')/255.)               
+        ax.set_ylabel('percent')
+        ax.set_xlabel('class')
+        ax.set_xticks(np.arange(len(heights))+0.45)
+        ax.set_xticklabels(np.arange(len(heights)))        
         
-def count_class_new(image_filename):
-    """
-    same as above but for the color scheme of new classification images
-    count the pixels of each of the class:
-    blue: (35,67,132)
-    green: (116,196,118)
-    yellow: (255,255,0)
-    red: (253,141,60)
-    
-    Parameters
-    ----------
-    image_filename: str
-        full path of the classified image file
-    """
-    
-    blue=0
-    green=0
-    yellow=0
-    red=0
-    black=0
-    
-    img = imio.imread(image_filename)
-    
-    spectral_axis = imio.guess_spectral_axis(img) 
-    if spectral_axis == 0:
-        img = imio.axshuffle(img)
-        
-    for i in range(0,img.shape[0]):
-        for j in range(0,img.shape[1]):
-            if img[i,j,0] == 35 and img[i,j,1] == 67 and img[i,j,2] == 132:
-                blue = blue + 1
-            if img[i,j,0] == 116 and img[i,j,1] == 196 and img[i,j,2] == 118:
-                green = green + 1
-            if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 50:
-                yellow = yellow + 1
-            if img[i,j,0] == 253 and img[i,j,1] == 141 and img[i,j,2] == 60:
-                red = red + 1
-            if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
-                black = black + 1
-                
-    print image_filename
-    print "red:", red, float(red)/float(blue+green+yellow+red)
-    print "yellow:", yellow, float(yellow)/float(blue+green+yellow+red)
-    print "green:", green, float(green)/float(blue+green+yellow+red)
-    print "blue:", blue, float(blue)/float(blue+green+yellow+red)
-    
-    if img.shape[0]*img.shape[1] != blue+green+yellow+red+black:
-        print("sum don't match")
-    
-    fig = plt.figure()
-    ax = plt.gca()
-    rects = ax.bar([1,2,3,4],
-                   [float(red)/float(blue+green+yellow+red),
-                    float(yellow)/float(blue+green+yellow+red),
-                    float(green)/float(blue+green+yellow+red),
-                    float(blue)/float(blue+green+yellow+red)], width=0.9)
-    rects[0].set_color([0.99,0.55,0.24])
-    rects[1].set_color([1,1,0.2])
-    rects[2].set_color([0.45,0.77,0.46])
-    rects[3].set_color([0.14,0.26,0.52])           
-    ax.set_ylabel('percent')
-    ax.set_xlabel('class')    
-    
 
 def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
-                        loc_mean_file=None, uniform_file=None, max_file=None,
-                        adapt_thres=11, selem_size=4, min_distance=3,
-                        radius=7, labels=False, small_thres=3, footprint=True,
-                        manual_find=False, use_uniform=True, quicklook=False):
+        loc_mean_file=None, uniform_file=None, max_file=None, adapt_thres=11,
+        selem_size=4, min_distance=3, radius=7, labels=False, small_thres=3,
+        footprint=True, manual_find=False, use_uniform=True, quicklook=False):
     """
     sandbox area for chl image classification
     this version has skimage local mean feature in it
@@ -954,6 +939,10 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
     log_file = max_file.replace('max', 'log')
     log_file = log_file.replace('tif', 'txt')   # issue for non-tiff images
     
+    dir_name = os.path.dirname(uniform_file)
+    if not os.path.isdir(dir_name):
+        os.makedirs(dir_name)
+    
     # processing for image enhancement
     chl_img = imio.imread(chl_file)
     chl_img = np.nan_to_num(chl_img)    
@@ -985,20 +974,16 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
     if labels == False:
         labelsYN = False
         small_thres = False
-        chl_img_max = skimage.feature.peak_local_max(loc_mean,
-                                                     min_distance=min_distance,                                                 
-                                                     exclude_border=True,
-                                                     indices=False,
-                                                     footprint=footprint,
-                                                     labels=bw)
+        chl_img_max=feature.peak_local_max(loc_mean, min_distance=min_distance,                                                 
+                                           exclude_border=True, indices=False,
+                                           footprint=footprint, labels=bw)
         uniform = classify.uniform_trees(loc_mean, chl_img_max, radius=radius)
         use_uniform = True
     else:
         labelsYN = True        
         distance = scipy.ndimage.distance_transform_edt(bw)
-        loc_max = skimage.feature.peak_local_max(distance, indices=False,
-                                                 min_distance=min_distance,
-                                                 labels=bw)
+        loc_max = feature.peak_local_max(distance, indices=False,
+                                         min_distance=min_distance, labels=bw)
         markers = scipy.ndimage.label(loc_max)[0]
         labels = skimage.morphology.watershed(-distance, markers, mask=bw)
         label_file = loc_mean_file.replace('loc_mean', 'label')
@@ -1007,20 +992,18 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
             labels = labels
         else:
             small_selem = np.ones((small_thres, small_thres))
-            small_obj = skimage.morphology.binary_opening(labels,
-                                                          selem=small_selem)
+            small_obj = morphology.binary_opening(labels, selem=small_selem)
             labels[~small_obj]=0  
 
         rastertools.write_geotiff_with_source(chl_file, labels, label_file,
                                               nodata=0, compress=False)    
     
         if manual_find == False:    # this usually runs into problems with lots of segment
-            chl_img_max = skimage.feature.peak_local_max(loc_mean,
-                                                         min_distance=1,
-                                                         exclude_border=False,
-                                                         indices=False,
-                                                         footprint=footprint,
-                                                         labels=labels)
+            chl_img_max = feature.peak_local_max(loc_mean, min_distance=1,
+                                                 exclude_border=False,
+                                                 indices=False, 
+                                                 footprint=footprint,
+                                                 labels=labels)
             uniform = classify.uniform_trees(loc_mean, chl_img_max,
                                              radius=radius)
         else:   # this sectoin manaully finds local max
@@ -1149,6 +1132,10 @@ def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
     log_file = uniform_file.replace('uniform', 'log')
     log_file = log_file.replace('tif', 'txt')
     
+    dir_name = os.path.dirname(uniform_file)
+    if not os.path.isdir(dir_name):
+        os.makedirs(dir_name)
+    
     # processing for image enhancement
     #ndvi_img = improc.imops.imio.imread(ndvi_files[1])
     chl_img = imio.imread(chl_file)
@@ -1169,18 +1156,14 @@ def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
     
     if labels == False:
         labelsYN = False
-        chl_img_max = skimage.feature.peak_local_max(tmp_img,
-                                                     min_distance=min_distance,                                                 
-                                                     exclude_border=True,
-                                                     indices=False,
-                                                     footprint=footprint,
-                                                     labels=bw)
+        chl_img_max=feature.peak_local_max(tmp_img, min_distance=min_distance,                                                 
+                                           exclude_border=True, indices=False,
+                                           footprint=footprint, labels=bw)
     else:   # usually runs into problems with large numbers of segment
         labelsYN = True
         distance = scipy.ndimage.distance_transform_edt(bw)
-        loc_max = skimage.feature.peak_local_max(distance, indices=False,
-                                                 min_distance=min_distance,
-                                                 labels=bw)
+        loc_max = feature.peak_local_max(distance, indices=False,
+                                         min_distance=min_distance, labels=bw)
         markers = scipy.ndimage.label(loc_max)[0]
         labels = skimage.morphology.watershed(-distance, markers, mask=bw)
                 
@@ -1195,12 +1178,11 @@ def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
         label_file = uniform_file.replace('uniform', 'label')
         rastertools.write_geotiff_with_source(chl_file, labels, label_file,
                                               nodata=0, compress=False)    
-        chl_img_max = skimage.feature.peak_local_max(tmp_img,
-                                                     min_distance=1,                                                 
-                                                     exclude_border=False,
-                                                     indices=False,
-                                                     footprint=footprint,
-                                                     labels=labels)
+        chl_img_max = feature.peak_local_max(tmp_img, min_distance=1,                                                 
+                                             exclude_border=False,
+                                             indices=False,
+                                             footprint=footprint,
+                                             labels=labels)
                                                          
     uniform = classify.uniform_trees(chl_img, chl_img_max, radius=radius)
     uniform[chl_img.mask] = 0
@@ -1338,6 +1320,77 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
     return out_im
     
 
+#==============================================================================
+# this section is for old stuff and sandbox
+
+    #some previously tried ways to count
+    #not really useful, just for record keeping    
+    #bool_blue = (img[:,:,0]==0) * (img[:,:,1]==0) * (img[:,:,2]==255)
+    #blue = len(bool_blue[bool_blue])
+    
+    #bool_green = (img[:,:,0]==0) * (img[:,:,1]==135) * (img[:,:,2]==14)
+    #green = len(bool_green[bool_green])
+    
+    #bool_yellow = (img[:,:,0]==255) * (img[:,:,1]==255) * (img[:,:,2]==0)
+    #yellow = len(bool_yellow[bool_yellow])
+    
+    #bool_red = (img[:,:,0]==255) * (img[:,:,1]==0) * (img[:,:,2]==0)
+    #red = len(bool_red[bool_red])
+    
+    #bool_black = (img[:,:,0]==0) * (img[:,:,1]==0) * (img[:,:,2]==0)
+    #black = len(bool_black[bool_black])    
+    
+    #blue = len(img[img[:,:,2]==255])
+    #green = len(img[img[:,:,1]==135])
+    #yellow = len(img[img[:,:,1]==255])
+    #red = len(img[img[:,:,0]==255]) - yellow
+    #black = len(img[img[:,:,0]==0]) - blue - green
+    
+    #blue=0
+    #green=0
+    #yellow=0
+    #red=0
+    #black=0   
+    #for i in range(img.shape[0]):
+    #    for j in range(img.shape[1]):
+    #        if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 255:
+    #            blue = blue + 1
+    #        if img[i,j,0] == 0 and img[i,j,1] == 135 and img[i,j,2] == 14:
+    #            green = green + 1
+    #        if img[i,j,0] == 255 and img[i,j,1] == 255 and img[i,j,2] == 0:
+    #            yellow = yellow + 1
+    #        if img[i,j,0] == 255 and img[i,j,1] == 0 and img[i,j,2] == 0:
+    #            red = red + 1
+    #        if img[i,j,0] == 0 and img[i,j,1] == 0 and img[i,j,2] == 0:
+    #            black = black + 1
+                
+    
+    #blue: (35,67,132)
+    #green: (116,196,118)
+    #yellow: (255,255,0)
+    #red: (253,141,60)
+            
+    #blue = len(img[img[:,:,0]==35])
+    #green = len(img[img[:,:,0]==116])
+    #yellow = len(img[img[:,:,0]==255])
+    #red = len(img[img[:,:,0]==253])
+    #black = len(img[img[:,:,0]==0])
+    
+    #fig = plt.figure()
+    #ax = plt.gca()
+    #rects = ax.bar([1,2,3,4],
+    #               [float(red)/float(blue+green+yellow+red),
+    #                float(yellow)/float(blue+green+yellow+red),
+    #                float(green)/float(blue+green+yellow+red),
+    #                float(blue)/float(blue+green+yellow+red)], width=0.9)
+    #rects[0].set_color([0.99,0.55,0.24])
+    #rects[1].set_color([1,1,0.2])
+    #rects[2].set_color([0.45,0.77,0.46])
+    #rects[3].set_color([0.14,0.26,0.52])           
+    #ax.set_ylabel('percent')
+    #ax.set_xlabel('class')    
+    
+ 
 def chl_classi_matlab(chl_file, bkg_thres=0.4, meanYN=True, ndvi=False,
                       uniform_file=None, max_file=None, radius=7,
                       min_distance=3, labels=False, small_thres=3):
