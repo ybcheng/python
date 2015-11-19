@@ -24,12 +24,13 @@ import fiona
 import shapely
 import skimage
 import cv2
+import functools
 import matplotlib.pyplot as plt
 from scipy import stats
 from skimage import filters, morphology, feature
 
 from ..imops import imio
-from ..gis import rastertools
+from ..gis import rastertools, shapetools, extract
 from ..gen import strops
 from ..cv import classify, slicing
 from ..dbops import finder, loader
@@ -66,7 +67,7 @@ def gen_imu2(file_path, imufile, imufile2, ext='.tif'):
     
 
 def rid_fake_y_flip(input_dir, trim_x, trim_y, output_dir, 
-                  ext='.tif', flip=True):
+                    ext='.tif', flip=True):
     """
     the aligned IDS2 images have a fake 3rd band, which is can cause issues in
     photoscan mosaics. This function is designed to simplely remove the fake
@@ -527,8 +528,7 @@ def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
     
 
 def percent_plot(input_file, bg_value=None, auto_acre=None, auto_acre_new=None,
-                 l_value=None, soil_value=0.4, l_bound=5, u_bound=90, 
-                 num_bins=5):
+        l_value=None, soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
     by default it plots between 5% percentile and max NDVI values
@@ -693,12 +693,54 @@ def get_sub_acreage(filename):
         print unq_ids[i], unq_areas[i]         
 
 
+def extract_points_multi(indx_files, shp_file, csv_file, use_local=False,
+                         find_min=False, mask_val=0):
+    """        
+    extract index values from one or more veg index images 
+    given a shapefile (points)
+    it's kind of usefule but also limited
+    currently only working for single band index image
+    not really recommned using local max/min function
+    and be aware of needing to find loc max for GCI but loc min for TCARI
+    
+    Parameters
+    ----------
+    indx_files: str
+        full path of vegetation index image
+    shp_file: str
+        full path of a shapfile of areas of interests (points)
+    csv_file: str
+        output results to .csv file
+    use_local: bool (opt)
+        option to find local max/min, default to FALSE
+    find_min: bool (opt)
+        parameter needed in classify.local_extrema function 
+    mask_val: int (opt)
+        mask value used when finding local max/min, default to 0
+    """
+    
+    output = shapetools.dataframe_from_shapefile(shp_file)
+    
+    for f in indx_files:
+        if use_local is False:
+            df = extract.match_points(f, shp_file)
+        else:
+            local_ext = functools.partial(
+                classify.local_extrema, find_min=find_min, mask_val=mask_val)
+            df = extract.match_points(f, shp_file, mask_func=local_ext)
+        output[os.path.basename(f)] = df['dn']
+
+    output.to_csv(csv_file, index=False, sep=',')
+    
+    return output
+        
+
 #==============================================================================
 # this section is related to classification on chl / NDVI image
 # including different ways (loc max / mean) and counting class for reporting
 
 def count_class(image_filename, plots=True,
-        colors=[[255,0,0],[255,255,0],[0,135,14],[0,0,255],[0,0,0]]):
+                colors=[[255,0,0],[255,255,0],[0,135,14],[0,0,255],[0,0,0]]):
     """
     count the pixels of each of the class. report counts, percentage and 
     a summary bar chart
@@ -711,7 +753,7 @@ def count_class(image_filename, plots=True,
         show a bar chart or not
     colors: numpy array
         rgb code of the classes followed by black [0,0,0] 
-    color examples:
+        examples of color code:
         red: [255,0,0]
         yellow: [255,255,0]
         green: [0,135,14]
@@ -722,12 +764,14 @@ def count_class(image_filename, plots=True,
         yellow: [255,255,0]
         green: [116,196,118]
         blue: [35,67,132]
+        black: [0, 0, 0]
         
         red: [255, 0, 0]
         orange: [255, 146, 0]
         yellow: [255, 255, 0]
         green: [0, 135, 14]
         blue: [0, 0, 255]
+        black: [0, 0, 0]
     """
     
     img = imio.imread(image_filename)
@@ -737,7 +781,7 @@ def count_class(image_filename, plots=True,
     
     colors = np.asarray(colors)
     counts = np.zeros(colors.shape[0], dtype='uint')
-    heights = np.zeros(counts.shape[0]-1, dtype='float32')
+    heights = np.zeros(counts.shape[0]-1, dtype='float32')  # no plotting black color
 
     for i in range(len(counts)):
         tmp = ((img[:,:,0]==colors[i,0])*(img[:,:,1]==colors[i,1])*
@@ -749,7 +793,7 @@ def count_class(image_filename, plots=True,
         print "color%s: %s, %.4f" %(i, counts[i], heights[i])
            
     if img.shape[0]*img.shape[1] != sum(counts):
-        print("sum don't match")
+        print "sum don't match"
         
     if plots:
         fig = plt.figure()
@@ -840,7 +884,7 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
     log_file = max_file.replace('max', 'log')
     log_file = log_file.replace('tif', 'txt')   # issue for non-tiff images
     
-    dir_name = os.path.dirname(uniform_file)
+    dir_name = os.path.dirname(uniform_file)    # make "color" folder if it does not exist
     if not os.path.isdir(dir_name):
         os.makedirs(dir_name)
     
@@ -900,11 +944,9 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
                                               nodata=0, compress=False)    
     
         if manual_find == False:    # this usually runs into problems with lots of segment
-            chl_img_max = feature.peak_local_max(loc_mean, min_distance=1,
-                                                 exclude_border=False,
-                                                 indices=False, 
-                                                 footprint=footprint,
-                                                 labels=labels)
+            chl_img_max = feature.peak_local_max(
+                loc_mean, min_distance=1, exclude_border=False, indices=False,
+                footprint=footprint, labels=labels)
             uniform = classify.uniform_trees(loc_mean, chl_img_max,
                                              radius=radius)
         else:   # this sectoin manaully finds local max
@@ -932,7 +974,7 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
                 uniform = uniform
             else:
                 uniform = classify.uniform_trees(loc_mean, chl_img_max,
-                                             radius=radius)                                             
+                                                 radius=radius)                                             
     
     uniform[chl_img.mask] = 0.0
     rastertools.write_geotiff_with_source(chl_file, uniform, uniform_file,
@@ -1057,9 +1099,9 @@ def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
     
     if labels == False:
         labelsYN = False
-        chl_img_max=feature.peak_local_max(tmp_img, min_distance=min_distance,                                                 
-                                           exclude_border=True, indices=False,
-                                           footprint=footprint, labels=bw)
+        chl_img_max = feature.peak_local_max(
+            tmp_img, min_distance=min_distance, exclude_border=True,
+            indices=False, footprint=footprint, labels=bw)
     else:   # usually runs into problems with large numbers of segment
         labelsYN = True
         distance = scipy.ndimage.distance_transform_edt(bw)
@@ -1079,11 +1121,9 @@ def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
         label_file = uniform_file.replace('uniform', 'label')
         rastertools.write_geotiff_with_source(chl_file, labels, label_file,
                                               nodata=0, compress=False)    
-        chl_img_max = feature.peak_local_max(tmp_img, min_distance=1,                                                 
-                                             exclude_border=False,
-                                             indices=False,
-                                             footprint=footprint,
-                                             labels=labels)
+        chl_img_max = feature.peak_local_max(
+            tmp_img, min_distance=1, exclude_border=False, indices=False,
+            footprint=footprint, labels=labels)
                                                          
     uniform = classify.uniform_trees(chl_img, chl_img_max, radius=radius)
     uniform[chl_img.mask] = 0
@@ -1183,7 +1223,7 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
                             loc_mean=True, uniform_file=None, max_file=None,
                             out_filename=None, slices_ext=None):
     """
-    
+    Wrapper for colorize_chl_classi
     """
     
     if chl_file is None:
@@ -1225,7 +1265,7 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
 # this section is for old stuff and sandbox
 
 def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
-                 soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
+                     soil_value=0.4, l_bound=5, u_bound=90, num_bins=5):
     """        
     creates a histogram like plot that reports acreage of certain NDVI values
     by default it plots between 5% percentile and max NDVI values
