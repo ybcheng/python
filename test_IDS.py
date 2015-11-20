@@ -693,7 +693,7 @@ def get_sub_acreage(filename):
         print unq_ids[i], unq_areas[i]         
 
 
-def extract_points_multi(indx_files, shp_file, csv_file, use_local=False,
+def extract_points(indx_files, shp_file, csv_file, use_local=False,
                          find_min=False, mask_val=0):
     """        
     extract index values at sample locations from one or more veg index images 
