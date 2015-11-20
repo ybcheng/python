@@ -696,10 +696,10 @@ def get_sub_acreage(filename):
 def extract_points_multi(indx_files, shp_file, csv_file, use_local=False,
                          find_min=False, mask_val=0):
     """        
-    extract index values from one or more veg index images 
-    given a shapefile (points)
+    extract index values at sample locations from one or more veg index images 
+    sample locations defined by a shapefile (points)
     it's kind of usefule but also limited
-    currently only working for single band index image
+    currently only works for single band index image
     not really recommned using local max/min function
     and be aware of needing to find loc max for GCI but loc min for TCARI
     
@@ -722,7 +722,8 @@ def extract_points_multi(indx_files, shp_file, csv_file, use_local=False,
     output = shapetools.dataframe_from_shapefile(shp_file)
     
     for f in indx_files:
-        if use_local is False:
+        #if use_local is False:
+        if  not use_local:  # no searching local max/min
             df = extract.match_points(f, shp_file)
         else:
             local_ext = functools.partial(
