@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri Apr 24 15:17:58 2015
-
 @author: Yen-Ben Cheng
-
 simple functions that operates on IDS images:
 # prepare aligned IDS images for Photoscan
 # take care of NaN values in IDS images
@@ -39,7 +37,6 @@ from . import anisodiff2y3d
 
 #==============================================================================
 # this section is mostly utilities for preprocessing and etc
-# various image manipulation functions and empirical line and IARR
 
 def gen_imu2(file_path, imufile, imufile2, ext='.tif'):
     """
@@ -247,6 +244,10 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
         imio.imsave(out,stacked)
        
         
+#==============================================================================
+# this section is about calibration and atmospheric correction
+# including IARR, empirical line, and applying cal coeff and SMARTS output
+        
 def empline_cal(image_filename, spectra_filename, output_filename,
                 mask_val = 0):
     """
@@ -357,7 +358,51 @@ def calc_iarr_with_geo(filename, iarr_filename):
     return iarr
     
 
-def dn_2_refl(dn_filename, rad_filename, refl_filename,
+def set_params():
+    """
+    Definitions of camera parameters related to radiometric calibration.
+    
+    This dictionary can (should?) be updated/expanded later to simplify things,
+    change "ids" into system name, e.g. "Pomona2",
+    and replace "611" "612" with band number "0" "1"
+    """
+
+    ids = {
+        "611":
+            {"sn": 4102887611,
+             "filter": "nir",
+             "int_time": 0.6,
+             "gain": 3.00036E-06,
+             "offset": 0},
+        "612":
+            {"sn": 4102887612,
+             "filter": "red",
+             "int_time": 0.8,
+             "gain": 3.4203E-06,
+             "offset": 0},
+        "421":
+            {"sn": 4102776421,
+             "filter": "red_edge",
+             "int_time": 1.15,
+             "gain": 3.41967E-06,
+             "offset": 0},
+        "902":
+            {"sn": 4102833902,
+             "filter": "green",
+             "int_time": 0.95,
+             "gain": 2.8315E-06,
+             "offset": 0},
+        "635":
+            {"sn": 4102719635,
+             "filter": "blue",
+             "int_time": 0.92,
+             "gain": 4.25458E-06,
+             "offset": 0}
+        }
+        
+    return locals()    
+        
+def dn_2_refl(dn_filename, refl_filename, rad_filename = None, 
               int_time=[1.0,1.0,1.0,1.0,1.0],
               gain=[1.0,1.0,1.0,1.0,1.0],
               offset=[0.0,0.0,0.0,0.0,0.0],
@@ -383,7 +428,7 @@ def dn_2_refl(dn_filename, rad_filename, refl_filename,
     irrad: float array
         simulated irradiance 
     """
-    
+        
     dn_img = imio.imread(dn_filename)
    
     spectral_axis = imio.guess_spectral_axis(dn_img) 
@@ -396,38 +441,88 @@ def dn_2_refl(dn_filename, rad_filename, refl_filename,
     
     for i in range(dn_img.shape[2]):
         rad_img[:,:,i] = dn_img[:,:,i]/int_time[i] * gain[i] + offset[i]
-        refl_img[:,:,i] = rad_img[:,:,i]/irrad[i]
+        refl_img[:,:,i] = rad_img[:,:,i]/irrad[i] * 3.14159265
         
     rad_img[dn_img.mask] = 0.0
     refl_img[dn_img.mask] = 0.0
-    rastertools.write_geotiff_with_source(dn_filename, rad_img, rad_filename,
-                                          nodata=0, compress=False)
+    
     rastertools.write_geotiff_with_source(dn_filename, refl_img, refl_filename,
                                           nodata=0, compress=False)
-                                          
+    if rad_filename is not None:
+        rastertools.write_geotiff_with_source(dn_filename, rad_img, rad_filename,
+                                          nodata=0, compress=False)                                      
     return rad_img, refl_img
 
 
-def dn_2_refl_files(input_dir, img_ext = 'tif'):
+def dn_2_refl_files(input_dir, img_ext = 'tif', rad = False,
+                    #int_time=[1.0,1.0,1.0,1.0,1.0],
+                    #gain=[1.0,1.0,1.0,1.0,1.0],
+                    #offset=[0.0,0.0,0.0,0.0,0.0],
+                    cam_set=['611','612','421','902','635'],
+                    irrad=[0.5668,0.7177,0.6621,0.8321,0.9027]):
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
+    input_dir should be either "masked", "mosaic", "registered",
+    "registered masked", or "registered merged"
+    all the files in one directory are supposed to be captured with one system
+    hence int_time, gain, offset should be good for all the files
     
     Parameters
     ----------
     input_dir: str
-        directory that has all the input files
+        full path of the directory that has all the input files
     img_ext: str
         extension of input files
+    (int_time: float array
+        integration time
+    gain: float array
+        calibration coefficient
+    offset: float array
+        calibration coefficient)
+    cam_set: str array
+        last three digits of s/n of cameras used, in the order and band number
+    irrad: float array
+        simulated irradiance, in the order of band number   
     """
     
     dn_files = glob.glob(input_dir + '*' + img_ext)
-    rad_files = [dn_file.replace('IDS', 'RAD')
-                 for dn_file in dn_files]
-    refl_files = [rad_file.replace('RAD', 'REFL')
-                  for rad_file in rad_files]
-                      
-    for (d, rad, refl) in zip(dn_files, rad_files, refl_files):
-        dn_2_refl(d, rad, refl)        
+    # generates output filenames
+    refl_files = [dn_file.replace('registered masked', 'physical')
+                  for dn_file in dn_files]
+    refl_files = [refl_file.replace('registered merged', 'physical')
+                  for refl_file in refl_files]
+    refl_files = [refl_file.replace('registered', 'physical')
+                  for refl_file in refl_files]
+    refl_files = [refl_file.replace('mosaic', 'physical')
+                  for refl_file in refl_files]
+    refl_files = [refl_file.replace('masked', 'physical')
+                  for refl_file in refl_files]              
+    
+    if rad == True:
+        rad_files = [refl_file.replace('IDS', 'RAD')
+                 for refl_file in refl_files]
+    else:
+        rad_files = ['None'
+                 for refl_file in refl_files]
+    
+    parameters = set_params()
+    cam_set = np.asarray(cam_set)
+    int_time = np.empty(cam_set.shape, dtype='float32')
+    gain = np.empty(cam_set.shape, dtype='float32')
+    offset = np.empty(cam_set.shape, dtype='float32')
+    
+    for i in range(len(cam_set)):
+        int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
+        gain[i] = parameters["ids"][cam_set[i]]["gain"]
+        offset[i] = parameters["ids"][cam_set[i]]["offset"]
+
+    #print int_time
+    #print gain
+    #print offset    
+                  
+    for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
+        dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time, gain=gain,
+                  offset=offset, irrad=irrad)        
                   
                   
 #==============================================================================
@@ -492,7 +587,6 @@ def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
         Filename of the IDS image file
     chl_filename: str (opt)
         Output filename for the chl file 
-
     Returns
     -------
     chl_image: 2darray
@@ -1164,7 +1258,6 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
     """
     Given an chl classification image, makes a colored version
     this function was a modification from improc.postprocess.colorize_visnir
-
     Parameters
     ----------
     uniform_filename: str
