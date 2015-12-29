@@ -245,7 +245,7 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
        
         
 #==============================================================================
-# this section is about calibration and atmospheric correction
+# this section is about radiometric calibration and atmospheric correction
 # including IARR, empirical line, and applying cal coeff and SMARTS output
         
 def empline_cal(image_filename, spectra_filename, output_filename,
@@ -361,44 +361,63 @@ def calc_iarr_with_geo(filename, iarr_filename):
 def set_params():
     """
     Definitions of camera parameters related to radiometric calibration.
-    
-    This dictionary can (should?) be updated/expanded later to simplify things,
-    change "ids" into system name, e.g. "Pomona2",
-    and replace "611" "612" with band number "0" "1"
+    mosaics from lympha systems have red band as band 1 and band 2 hence
+    the dummy band 2 for lympha systems.
     """
 
-    ids = {
-        "611":
+    pomona2 = {
+        "0":
             {"sn": 4102887611,
              "filter": "nir",
              "int_time": 0.6,
              "gain": 3.00036E-06,
              "offset": 0},
-        "612":
+        "1":
             {"sn": 4102887612,
              "filter": "red",
              "int_time": 0.8,
              "gain": 3.4203E-06,
              "offset": 0},
-        "421":
+        "2":
             {"sn": 4102776421,
              "filter": "red_edge",
              "int_time": 1.15,
              "gain": 3.41967E-06,
              "offset": 0},
-        "902":
+        "3":
             {"sn": 4102833902,
              "filter": "green",
              "int_time": 0.95,
              "gain": 2.8315E-06,
              "offset": 0},
-        "635":
+        "4":
             {"sn": 4102719635,
              "filter": "blue",
              "int_time": 0.92,
              "gain": 4.25458E-06,
              "offset": 0}
         }
+        
+    lympha5 = {
+        "0":
+            {"sn": 4102815403,
+             "filter": "nir",
+             "int_time": 0.6,
+             "gain": 1.0,
+             "offset": 0},
+        "1":
+            {"sn": 4102815401,
+             "filter": "red",
+             "int_time": 0.94,
+             "gain": 1.0,
+             "offset": 0},
+        "2":
+            {"sn": 4102815401,
+             "filter": "red",
+             "int_time": 0.94,
+             "gain": 1.0,
+             "offset": 0}     
+        }    
         
     return locals()    
         
@@ -414,7 +433,7 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     Parameters
     ----------
     dn_filename: str
-        full path of input image in DN
+        full path of input image in DN, image needs to be in 16bit format
     rad_filename: str
         fulll path of output radiance image
     refl_filename: str
@@ -435,6 +454,10 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     if spectral_axis == 0:
         dn_img = imio.axshuffle(dn_img)
     
+    if (dn_img.shape[2]!=len(int_time) or dn_img.shape[2]!=len(gain) or 
+        dn_img.shape[2]!=len(offset) or dn_img.shape[2]!=len(irrad)):
+        raise ValueError("Image dimensions do not appear to be correct.")    
+    
     dn_img = np.ma.masked_less_equal(dn_img, 0).astype('float32')
     rad_img = np.zeros(dn_img.shape, dtype=dn_img.dtype)
     refl_img = np.zeros(rad_img.shape, dtype=rad_img.dtype)
@@ -454,12 +477,8 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     return rad_img, refl_img
 
 
-def dn_2_refl_files(input_dir, img_ext = 'tif', rad = False,
-                    #int_time=[1.0,1.0,1.0,1.0,1.0],
-                    #gain=[1.0,1.0,1.0,1.0,1.0],
-                    #offset=[0.0,0.0,0.0,0.0,0.0],
-                    cam_set=['611','612','421','902','635'],
-                    irrad=[0.5668,0.7177,0.6621,0.8321,0.9027]):
+def dn_2_refl_files(input_dir, img_ext='tif', rad=False, system="pomona2",
+                    irrad=[0.5668,0.7177,0.6621,0.8321,0.9027]):                     
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
     input_dir should be either "masked", "mosaic", "registered",
@@ -506,24 +525,24 @@ def dn_2_refl_files(input_dir, img_ext = 'tif', rad = False,
                  for refl_file in refl_files]
     
     parameters = set_params()
-    cam_set = np.asarray(cam_set)
+    cam_set = np.asarray(parameters[system].keys())
+    #cam_set = np.asarray(cam_set)
     int_time = np.empty(cam_set.shape, dtype='float32')
     gain = np.empty(cam_set.shape, dtype='float32')
     offset = np.empty(cam_set.shape, dtype='float32')
     
-    for i in range(len(cam_set)):
-        int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
-        gain[i] = parameters["ids"][cam_set[i]]["gain"]
-        offset[i] = parameters["ids"][cam_set[i]]["offset"]
-
-    #print int_time
-    #print gain
-    #print offset    
+    for i in range(len(cam_set)):       
+        int_time[i] = parameters[system][str(i)]["int_time"]
+        gain[i] = parameters[system][str(i)]["gain"]
+        offset[i] = parameters[system][str(i)]["offset"]        
+        #int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
+        #gain[i] = parameters["ids"][cam_set[i]]["gain"]
+        #offset[i] = parameters["ids"][cam_set[i]]["offset"]
                   
     for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
         dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time, gain=gain,
                   offset=offset, irrad=irrad)        
-                  
+            
                   
 #==============================================================================
 # this section is about chl index calculation and a little post processing
