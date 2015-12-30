@@ -6,6 +6,7 @@ simple functions that operates on IDS images:
 # prepare aligned IDS images for Photoscan
 # take care of NaN values in IDS images
 # generates chl images
+# calibration and atmospheric correction
 !!!ATTENTION!!! functions may not be compatible with tetracam or other images
 """
 
@@ -361,62 +362,65 @@ def calc_iarr_with_geo(filename, iarr_filename):
 def set_params():
     """
     Definitions of camera parameters related to radiometric calibration.
-    mosaics from lympha systems have red band as band 1 and band 2 hence
-    the dummy band 2 for lympha systems.
+    The dictionary can be revised as system-based, replace 'ids' with 'pomona2'
+    replace '611' '612' with '0' '1'
     """
 
-    pomona2 = {
-        "0":
+    ids = {
+        "611":
             {"sn": 4102887611,
              "filter": "nir",
              "int_time": 0.6,
              "gain": 3.00036E-06,
              "offset": 0},
-        "1":
+        "612":
             {"sn": 4102887612,
              "filter": "red",
              "int_time": 0.8,
              "gain": 3.4203E-06,
              "offset": 0},
-        "2":
+        "421":
             {"sn": 4102776421,
              "filter": "red_edge",
              "int_time": 1.15,
              "gain": 3.41967E-06,
              "offset": 0},
-        "3":
+        "902":
             {"sn": 4102833902,
              "filter": "green",
              "int_time": 0.95,
              "gain": 2.8315E-06,
              "offset": 0},
-        "4":
+        "635":
             {"sn": 4102719635,
              "filter": "blue",
              "int_time": 0.92,
              "gain": 4.25458E-06,
-             "offset": 0}
-        }
-        
-    lympha5 = {
-        "0":
+             "offset": 0},
+        "403":
             {"sn": 4102815403,
              "filter": "nir",
              "int_time": 0.6,
              "gain": 1.0,
              "offset": 0},
-        "1":
+        "401":
             {"sn": 4102815401,
              "filter": "red",
              "int_time": 0.94,
              "gain": 1.0,
              "offset": 0},
-        "2":
-            {"sn": 4102815401,
-             "filter": "red",
-             "int_time": 0.94,
+        "601":
+            {"sn": 4102742601,
+             "filter": "nir",
+             "int_time": 0.7,
              "gain": 1.0,
-             "offset": 0}     
+             "offset": 0},
+        "641":
+            {"sn": 4102719641,
+             "filter": "red",
+             "int_time": 1.1,
+             "gain": 1.0,
+             "offset": 0}             
         }    
         
     return locals()    
@@ -447,16 +451,21 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     irrad: float array
         simulated irradiance 
     """
+    if os.path.exists(refl_filename):
+        raise ValueError("Reflectance file already exists")
         
     dn_img = imio.imread(dn_filename)
    
     spectral_axis = imio.guess_spectral_axis(dn_img) 
     if spectral_axis == 0:
         dn_img = imio.axshuffle(dn_img)
+        
+    if dn_img.shape[2] == 3:        # mosaics from lympha systesm have red band twice
+        dn_img = dn_img[:,:,:2]     # get rid of the redundant band 
     
     if (dn_img.shape[2]!=len(int_time) or dn_img.shape[2]!=len(gain) or 
-        dn_img.shape[2]!=len(offset) or dn_img.shape[2]!=len(irrad)):
-        raise ValueError("Image dimensions do not appear to be correct.")    
+            dn_img.shape[2]!=len(offset) or dn_img.shape[2]!=len(irrad)):    
+        raise ValueError("Image dimensions do not appear to be correct")    
     
     dn_img = np.ma.masked_less_equal(dn_img, 0).astype('float32')
     rad_img = np.zeros(dn_img.shape, dtype=dn_img.dtype)
@@ -472,13 +481,14 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     rastertools.write_geotiff_with_source(dn_filename, refl_img, refl_filename,
                                           nodata=0, compress=False)
     if rad_filename is not None:
-        rastertools.write_geotiff_with_source(dn_filename, rad_img, rad_filename,
-                                          nodata=0, compress=False)                                      
+        rastertools.write_geotiff_with_source(dn_filename, rad_img,
+                rad_filename, nodata=0, compress=False)                                      
     return rad_img, refl_img
 
 
-def dn_2_refl_files(input_dir, img_ext='tif', rad=False, system="pomona2",
-                    irrad=[0.5668,0.7177,0.6621,0.8321,0.9027]):                     
+def dn_2_refl_files(dn_files, rad = False, replace = True,
+                    cam_set = ['611','612','421','902','635'],
+                    irrad = [0.5668, 0.7177, 0.6621, 0.8321, 0.9027]):                     
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
     input_dir should be either "masked", "mosaic", "registered",
@@ -488,23 +498,22 @@ def dn_2_refl_files(input_dir, img_ext='tif', rad=False, system="pomona2",
     
     Parameters
     ----------
-    input_dir: str
-        full path of the directory that has all the input files
-    img_ext: str
-        extension of input files
-    (int_time: float array
-        integration time
-    gain: float array
-        calibration coefficient
-    offset: float array
-        calibration coefficient)
+    dn_files: list
+        files that are in DN to be processed
     cam_set: str array
         last three digits of s/n of cameras used, in the order and band number
+        it's used to generate int_time, gain, offset arrays:        
+        (int_time: float array
+             integration time
+         gain: float array
+             calibration coefficient
+         offset: float array
+             calibration coefficient)        
     irrad: float array
         simulated irradiance, in the order of band number   
     """
     
-    dn_files = glob.glob(input_dir + '*' + img_ext)
+    #dn_files = glob.glob(input_dir + '*IDS*' + img_ext) #because we don't process FLIR images
     # generates output filenames
     refl_files = [dn_file.replace('registered masked', 'physical')
                   for dn_file in dn_files]
@@ -525,23 +534,32 @@ def dn_2_refl_files(input_dir, img_ext='tif', rad=False, system="pomona2",
                  for refl_file in refl_files]
     
     parameters = set_params()
-    cam_set = np.asarray(parameters[system].keys())
-    #cam_set = np.asarray(cam_set)
+    cam_set = np.asarray(cam_set)
+    #cam_set = np.asarray(parameters[system].keys())
     int_time = np.empty(cam_set.shape, dtype='float32')
     gain = np.empty(cam_set.shape, dtype='float32')
     offset = np.empty(cam_set.shape, dtype='float32')
     
     for i in range(len(cam_set)):       
-        int_time[i] = parameters[system][str(i)]["int_time"]
-        gain[i] = parameters[system][str(i)]["gain"]
-        offset[i] = parameters[system][str(i)]["offset"]        
-        #int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
-        #gain[i] = parameters["ids"][cam_set[i]]["gain"]
-        #offset[i] = parameters["ids"][cam_set[i]]["offset"]
-                  
+        int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
+        gain[i] = parameters["ids"][cam_set[i]]["gain"]
+        offset[i] = parameters["ids"][cam_set[i]]["offset"]
+        #int_time[i] = parameters[system][str(i)]["int_time"]
+        #gain[i] = parameters[system][str(i)]["gain"]
+        #offset[i] = parameters[system][str(i)]["offset"]                  
+        
     for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
-        dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time, gain=gain,
-                  offset=offset, irrad=irrad)        
+        if os.path.exists(refl):
+            if not replace:
+                continue
+            else:
+                os.remove(refl)                    
+        try:
+            dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
+                      gain=gain, offset=offset, irrad=irrad)
+            print "processed %s" %(dn)
+        except ValueError:
+            print "error processing %s" %(dn)
             
                   
 #==============================================================================
