@@ -362,65 +362,99 @@ def calc_iarr_with_geo(filename, iarr_filename):
 def set_params():
     """
     Definitions of camera parameters related to radiometric calibration.
-    The dictionary can be revised as system-based, replace 'ids' with 'pomona2'
-    replace '611' '612' with '0' '1'
+    Note: the dictionary can be revised as system-based, e.g. replace
+    'ids' with 'pomona2', replace '611' '612' with '0' '1'
     """
 
     ids = {
         "611":
-            {"sn": 4102887611,
+            {"system": "pomona-2",
+             "sn": 4102887611,
              "filter": "nir",
              "int_time": 0.6,
              "gain": 3.00036E-06,
-             "offset": 0},
-        "612":
-            {"sn": 4102887612,
+             "offset": 0,
+             "adj_coeff": 1.0}, # the adjustment coeeficient is to make our reflectance      
+        "612":                  # look like known reference, e.g. AVIRIS, but not being used right now
+            {"system": "pomona-2",
+             "sn": 4102887612,
              "filter": "red",
              "int_time": 0.8,
              "gain": 3.4203E-06,
-             "offset": 0},
+             "offset": 0,
+             "adj_coeff": 1.0},
         "421":
-            {"sn": 4102776421,
+            {"system": "pomona-2",
+             "sn": 4102776421,
              "filter": "red_edge",
              "int_time": 1.15,
              "gain": 3.41967E-06,
-             "offset": 0},
+             "offset": 0,
+             "adj_coeff": 1.0},
         "902":
-            {"sn": 4102833902,
+            {"system": "pomona-2",
+             "sn": 4102833902,
              "filter": "green",
              "int_time": 0.95,
              "gain": 2.8315E-06,
-             "offset": 0},
+             "offset": 0,
+             "adj_coeff": 1.0},
         "635":
-            {"sn": 4102719635,
+            {"system": "pomona-2",
+             "sn": 4102719635,
              "filter": "blue",
              "int_time": 0.92,
              "gain": 4.25458E-06,
-             "offset": 0},
+             "offset": 0,
+             "adj_coeff": 1.0},
         "403":
-            {"sn": 4102815403,
+            {"system": "lympha-5",
+             "sn": 4102815403,
              "filter": "nir",
              "int_time": 0.6,
              "gain": 1.0,
-             "offset": 0},
+             "offset": 0,
+             "adj_coeff": 1.0},
         "401":
-            {"sn": 4102815401,
+            {"system": "lympha-5",
+             "sn": 4102815401,
              "filter": "red",
              "int_time": 0.94,
              "gain": 1.0,
-             "offset": 0},
+             "offset": 0,
+             "adj_coeff": 1.0},
         "601":
-            {"sn": 4102742601,
+            {"system": "lympha-2",
+             "sn": 4102742601,
              "filter": "nir",
              "int_time": 0.7,
              "gain": 1.0,
-             "offset": 0},
+             "offset": 0,
+             "adj_coeff": 1.0},
         "641":
-            {"sn": 4102719641,
+            {"system": "lympha-2",
+             "sn": 4102719641,
              "filter": "red",
              "int_time": 1.1,
              "gain": 1.0,
-             "offset": 0}             
+             "offset": 0,
+             "adj_coeff": 1.0},
+        "412":
+            {"system": "lympha-1",
+             "sn": 4102815412,
+             "filter": "nir",
+             "int_time": 0.7,
+             "gain": 1.0,
+             "offset": 0,
+             "adj_coeff": 1.0},
+        "399":
+            {"system": "lympha-1",
+             "sn": 4102815399,
+             "filter": "red",
+             "int_time": 1.1,
+             "gain": 1.0,
+             "offset": 0,
+             "adj_coeff": 1.0}             
         }    
         
     return locals()    
@@ -438,10 +472,10 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     ----------
     dn_filename: str
         full path of input image in DN, image needs to be in 16bit format
-    rad_filename: str
-        fulll path of output radiance image
     refl_filename: str
         full path of output reflectance image
+    rad_filename: str
+        fulll path of output radiance image
     int_time: float array
         integration time
     gain: float array
@@ -451,8 +485,8 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     irrad: float array
         simulated irradiance 
     """
-    if os.path.exists(refl_filename):
-        raise ValueError("Reflectance file already exists")
+    #if os.path.exists(refl_filename):
+    #    raise ValueError("Reflectance file already exists")
         
     dn_img = imio.imread(dn_filename)
    
@@ -460,7 +494,8 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     if spectral_axis == 0:
         dn_img = imio.axshuffle(dn_img)
         
-    if dn_img.shape[2] == 3:        # mosaics from lympha systesm have red band twice
+    # mosaics from lympha systesm have red band twice
+    if dn_img.shape[2] == 3 and len(np.asarray(gain)) == 2:  
         dn_img = dn_img[:,:,:2]     # get rid of the redundant band 
     
     if (dn_img.shape[2]!=len(int_time) or dn_img.shape[2]!=len(gain) or 
@@ -500,6 +535,10 @@ def dn_2_refl_files(dn_files, rad = False, replace = True,
     ----------
     dn_files: list
         files that are in DN to be processed
+    rad: bool
+        to generate radiance file or not
+    replce: bool
+        to replace reflectance file or not if it's been generated before
     cam_set: str array
         last three digits of s/n of cameras used, in the order and band number
         it's used to generate int_time, gain, offset arrays:        
@@ -549,17 +588,17 @@ def dn_2_refl_files(dn_files, rad = False, replace = True,
         #offset[i] = parameters[system][str(i)]["offset"]                  
         
     for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
-        if os.path.exists(refl):
-            if not replace:
-                continue
-            else:
-                os.remove(refl)                    
-        try:
-            dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
-                      gain=gain, offset=offset, irrad=irrad)
-            print "processed %s" %(dn)
-        except ValueError:
-            print "error processing %s" %(dn)
+        if os.path.exists(refl) and not replace:
+            print "reflectance file exists, skipping %s" %(dn)
+        else:
+            #if os.path.exists(refl):
+            #    os.remove(refl)                    
+            try:
+                dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
+                          gain=gain, offset=offset, irrad=irrad)
+                print "processed %s" %(dn)
+            except ValueError:
+                print "error processing %s" %(dn)
             
                   
 #==============================================================================
