@@ -371,7 +371,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102887611,
              "filter": "nir",
-             "int_time": 0.6,
+             "int_time": 1.7,
              "gain": 3.00036E-06,
              "offset": 0,
              "adj_coeff": 1.0}, # the adjustment coeeficient is to make our reflectance      
@@ -379,7 +379,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102887612,
              "filter": "red",
-             "int_time": 0.8,
+             "int_time": 1.5,
              "gain": 3.4203E-06,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -387,7 +387,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102776421,
              "filter": "red_edge",
-             "int_time": 1.15,
+             "int_time": 1.5,
              "gain": 3.41967E-06,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -395,7 +395,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102833902,
              "filter": "green",
-             "int_time": 0.95,
+             "int_time": 2.1,
              "gain": 2.8315E-06,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -403,10 +403,50 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102719635,
              "filter": "blue",
-             "int_time": 0.92,
+             "int_time": 2.5,
              "gain": 4.25458E-06,
              "offset": 0,
              "adj_coeff": 1.0},
+        "409":
+            {"system": "pomona-1",
+             "sn": 4102815409,
+             "filter": "nir",
+             "int_time": 0.6,       # WARNING !!!
+             "gain": 3.4022E-06,    # the cal coeffs for Pomona 1 were 
+             "offset": 3.4688E-03,  # derived from comparing with AVIRIS
+             "adj_coeff": 1.0},     # has significant offsets 
+        "404":                  
+            {"system": "pomona-1",
+             "sn": 4102815404,
+             "filter": "red",
+             "int_time": 0.8,
+             "gain": 2.0800E-06,    #
+             "offset": 8.235E-03,   #
+             "adj_coeff": 1.0},
+        "400":
+            {"system": "pomona-1",
+             "sn": 4102815400,
+             "filter": "red_edge",
+             "int_time": 1.15,
+             "gain": 2.9944E-06,    #
+             "offset": 2.9447E-02,  #
+             "adj_coeff": 1.0},
+        "413":
+            {"system": "pomona-1",
+             "sn": 4102815413,
+             "filter": "green",
+             "int_time": 0.95,
+             "gain": 3.8282E-06,    #
+             "offset": 7.5872E-03,  #
+             "adj_coeff": 1.0},
+        "408":
+            {"system": "pomona-1",
+             "sn": 4102815408,
+             "filter": "blue",
+             "int_time": 0.92,
+             "gain": 1.3821E-06,    #
+             "offset": 2.3604E-02,  #
+             "adj_coeff": 1.0},     
         "403":
             {"system": "lympha-5",
              "sn": 4102815403,
@@ -428,7 +468,7 @@ def set_params():
              "sn": 4102742601,
              "filter": "nir",
              "int_time": 0.7,
-             "gain": 1.0,
+             "gain": 3.39E-06,
              "offset": 0,
              "adj_coeff": 1.0},
         "641":
@@ -436,7 +476,7 @@ def set_params():
              "sn": 4102719641,
              "filter": "red",
              "int_time": 1.1,
-             "gain": 1.0,
+             "gain": 2.66E-06,  #3.36E-06
              "offset": 0,
              "adj_coeff": 1.0},
         "412":
@@ -453,6 +493,22 @@ def set_params():
              "filter": "red",
              "int_time": 1.1,
              "gain": 1.0,
+             "offset": 0,
+             "adj_coeff": 1.0},
+        "405":
+            {"system": "lympha-4",
+             "sn": 4102815405,
+             "filter": "nir",
+             "int_time": 0.9,
+             "gain": 3.33E-06,
+             "offset": 0,
+             "adj_coeff": 1.0},
+        "682":
+            {"system": "lympha-4",
+             "sn": 4102760682,
+             "filter": "red",
+             "int_time": 1.1,
+             "gain": 3.05E-06,
              "offset": 0,
              "adj_coeff": 1.0}             
         }    
@@ -500,7 +556,7 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     
     if (dn_img.shape[2]!=len(int_time) or dn_img.shape[2]!=len(gain) or 
             dn_img.shape[2]!=len(offset) or dn_img.shape[2]!=len(irrad)):    
-        raise ValueError("Image dimensions do not appear to be correct")    
+        raise ValueError("Image dimension does not appear to be correct")    
     
     dn_img = np.ma.masked_less_equal(dn_img, 0).astype('float32')
     rad_img = np.zeros(dn_img.shape, dtype=dn_img.dtype)
@@ -526,9 +582,9 @@ def dn_2_refl_files(dn_files, rad = False, replace = True,
                     irrad = [0.5668, 0.7177, 0.6621, 0.8321, 0.9027]):                     
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
-    input_dir should be either "masked", "mosaic", "registered",
-    "registered masked", or "registered merged"
-    all the files in one directory are supposed to be captured with one system
+    dn_files should be in either "masked", "mosaic", "registered",
+    "registered masked", or "registered merged" folder
+    all the dn_files are supposed to be captured with one system
     hence int_time, gain, offset should be good for all the files
     
     Parameters
@@ -543,7 +599,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = True,
         last three digits of s/n of cameras used, in the order and band number
         it's used to generate int_time, gain, offset arrays:        
         (int_time: float array
-             integration time
+             integration time in ms
          gain: float array
              calibration coefficient
          offset: float array
@@ -629,7 +685,7 @@ def gen_chl_files(filenames, in_dir, unit='ids', dummy=None, replace=True):
             # generate a good output filename
             #chl_filename = strops.ireplace("IDS", "chl", filename)
             #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
-            chl_filename = filename.replace(unit.upper(), 'CHL')
+            chl_filename = filename.replace(unit.upper(), 'chl')
             chl_filename = chl_filename.replace(in_dir, 'output')
             dir_name = os.path.dirname(chl_filename)
             if not os.path.isdir(dir_name):
@@ -1334,14 +1390,15 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
     """
     Given an chl classification image, makes a colored version
     this function was a modification from improc.postprocess.colorize_visnir
+    
     Parameters
     ----------
     uniform_filename: str
-        Full path to file to recolor
+        Full path of file to recolor
     num_classes: int
         How many classes in the image
     slices_ext: list
-        Pass in your own list of boundaries between slice colors.
+        Pass in your own list of boundaries between slice colors
     """
     
     if num_classes == 4:
@@ -1394,6 +1451,26 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
                             out_filename=None, slices_ext=None):
     """
     Wrapper for colorize_chl_classi
+    either give chl_filename or both uniform_filename and max_filename
+    
+    Parameters
+    ----------
+    num_classes: int
+        How many classes in the results    
+    chl_file: str
+        Full path of chlorophyll file
+    ndvi: bool
+        NDVI file or not (chlorophyll file)
+    loc_mean: bool
+        Classification based on local mean or not (local maximum)    
+    uniform_file: str
+        Full path of the uniform file to recolor
+    max_file: str
+        Full path of the maximum file
+    out_filename: str
+        Full path of the output file    
+    slices_ext: list
+        Pass in your own list of boundaries between slice colors
     """
     
     if chl_file is None:
@@ -1416,20 +1493,32 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
             uniform_file = uniform_file.replace('chl', 'chl_uniform')
             max_file = uniform_file.replace('uniform', 'max')
     
-    if os.path.exists(uniform_file) and os.path.exists(max_file):
+    #if (uniform_file is not None and max_file is not None and 
+    #       os.path.exists(uniform_file) and os.path.exists(max_file)):
+    #    out_im = colorize_chl_classi(uniform_file, max_file, num_classes,
+    #                             slices_ext=slices_ext)
+    #else:
+    #    sys.exit("file(s) not exist")        
+    #
+    #if out_filename is None:
+    #    out_filename = uniform_file.replace('uniform', 'class')
+    #else:
+    #    out_filename = out_filename
+    #rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
+    #
+    #return out_im
+    
+    try:
         out_im = colorize_chl_classi(uniform_file, max_file, num_classes,
-                                 slices_ext=slices_ext)
-    else:
-        sys.exit("file(s) not exist")        
-    
-    if out_filename is None:
-        out_filename = uniform_file.replace('uniform', 'class')
-    else:
-        out_filename = out_filename
-    rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
-    
-    return out_im
-    
+                                     slices_ext=slices_ext)                  
+        if out_filename is None:
+            out_filename = uniform_file.replace('uniform', 'class')
+        else:
+            out_filename = out_filename            
+        rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
+    except (TypeError, ValueError, AttributeError):
+        print "error processing, check the input files"
+
 
 #==============================================================================
 # this section is for old stuff and sandbox
