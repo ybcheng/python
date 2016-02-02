@@ -484,7 +484,7 @@ def set_params():
              "sn": 4102815412,
              "filter": "nir",
              "int_time": 0.7,
-             "gain": 1.0,
+             "gain": 2.88E-06,
              "offset": 0,
              "adj_coeff": 1.0},
         "399":
@@ -492,7 +492,7 @@ def set_params():
              "sn": 4102815399,
              "filter": "red",
              "int_time": 1.1,
-             "gain": 1.0,
+             "gain": 3.17E-06,
              "offset": 0,
              "adj_coeff": 1.0},
         "405":
@@ -509,6 +509,22 @@ def set_params():
              "filter": "red",
              "int_time": 1.1,
              "gain": 3.05E-06,
+             "offset": 0,
+             "adj_coeff": 1.0},
+        "610":
+            {"system": "lympha-3",
+             "sn": 4102887610,
+             "filter": "nir",
+             "int_time": 0.9,
+             "gain": 1.0E-00,
+             "offset": 0,
+             "adj_coeff": 1.0},
+        "419":
+            {"system": "lympha-3",
+             "sn": 4102776419,
+             "filter": "red",
+             "int_time": 1.1,
+             "gain": 1.0E-00,
              "offset": 0,
              "adj_coeff": 1.0}             
         }    
@@ -1020,7 +1036,7 @@ def count_class(image_filename, plots=True,
         print "color%s: %s, %.4f" %(i, counts[i], heights[i])
            
     if img.shape[0]*img.shape[1] != sum(counts):
-        print "sum don't match"
+        print "ERROR!!! sums don't match"
         
     if plots:
         fig = plt.figure()
@@ -1516,6 +1532,7 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
         else:
             out_filename = out_filename            
         rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
+        print out_filename
     except (TypeError, ValueError, AttributeError):
         print "error processing, check the input files"
 
