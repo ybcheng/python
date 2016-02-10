@@ -5,8 +5,9 @@ Created on Fri Apr 24 15:17:58 2015
 simple functions that operates on IDS images:
 # prepare aligned IDS images for Photoscan
 # take care of NaN values in IDS images
-# generates chl images
 # calibration and atmospheric correction
+# generates chl images
+# classification
 !!!ATTENTION!!! functions may not be compatible with tetracam or other images
 """
 
@@ -371,7 +372,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102887611,
              "filter": "nir",
-             "int_time": 1.7,
+             "int_time": 0.8,
              "gain": 3.00036E-06,
              "offset": 0,
              "adj_coeff": 1.0}, # the adjustment coeeficient is to make our reflectance      
@@ -379,7 +380,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102887612,
              "filter": "red",
-             "int_time": 1.5,
+             "int_time": 1.3,
              "gain": 3.4203E-06,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -387,7 +388,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102776421,
              "filter": "red_edge",
-             "int_time": 1.5,
+             "int_time": 1.3,
              "gain": 3.41967E-06,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -395,7 +396,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102833902,
              "filter": "green",
-             "int_time": 2.1,
+             "int_time": 1.9,
              "gain": 2.8315E-06,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -403,7 +404,7 @@ def set_params():
             {"system": "pomona-2",
              "sn": 4102719635,
              "filter": "blue",
-             "int_time": 2.5,
+             "int_time": 2.2,
              "gain": 4.25458E-06,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -538,7 +539,8 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
               irrad=[1.0,1.0,1.0,1.0,1.0]):
     """
     function that transfer dn to radiance and reflectance using calibration 
-    coefficients and simulated irradiance
+    coefficients and simulated irradiance. A scale of 10,000 is applied to both
+    radiance and reflectance to save processing time and file size
     
     Parameters
     ----------
@@ -576,13 +578,15 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     
     dn_img = np.ma.masked_less_equal(dn_img, 0).astype('float32')
     rad_img = np.zeros(dn_img.shape, dtype=dn_img.dtype)
-    refl_img = np.zeros(rad_img.shape, dtype=rad_img.dtype)
+    refl_img = np.zeros(rad_img.shape, dtype=dn_img.dtype)
     
     for i in range(dn_img.shape[2]):
-        rad_img[:,:,i] = dn_img[:,:,i]/int_time[i] * gain[i] + offset[i]
+        rad_img[:,:,i] = (dn_img[:,:,i]/int_time[i] * gain[i] + offset[i]) * 10000
         refl_img[:,:,i] = rad_img[:,:,i]/irrad[i] * 3.14159265
         
+    rad_img = rad_img.astype('int16')
     rad_img[dn_img.mask] = 0.0
+    refl_img = refl_img.astype('int16')
     refl_img[dn_img.mask] = 0.0
     
     rastertools.write_geotiff_with_source(dn_filename, refl_img, refl_filename,
