@@ -584,11 +584,11 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
         rad_img[:,:,i] = (dn_img[:,:,i]/int_time[i] * gain[i] + offset[i]) * 10000
         refl_img[:,:,i] = rad_img[:,:,i]/irrad[i] * 3.14159265
         
-    rad_img = rad_img.astype('int16')
     rad_img[dn_img.mask] = 0.0
-    refl_img = refl_img.astype('int16')
+    rad_img = rad_img.astype('uint16')
     refl_img[dn_img.mask] = 0.0
-    
+    refl_img = refl_img.astype('uint16')
+        
     rastertools.write_geotiff_with_source(dn_filename, refl_img, refl_filename,
                                           nodata=0, compress=False)
     if rad_filename is not None:
@@ -597,7 +597,7 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     return rad_img, refl_img
 
 
-def dn_2_refl_files(dn_files, rad = False, replace = True,
+def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
                     cam_set = ['611','612','421','902','635'],
                     irrad = [0.5668, 0.7177, 0.6621, 0.8321, 0.9027]):                     
     """
@@ -615,6 +615,9 @@ def dn_2_refl_files(dn_files, rad = False, replace = True,
         to generate radiance file or not
     replce: bool
         to replace reflectance file or not if it's been generated before
+    pilot_id: int
+        a database of cam_set and irrad is stored in irrad.csv and cams.csv
+        pilot_id is used to retrieve the correct info based on pilot number
     cam_set: str array
         last three digits of s/n of cameras used, in the order and band number
         it's used to generate int_time, gain, offset arrays:        
@@ -647,6 +650,22 @@ def dn_2_refl_files(dn_files, rad = False, replace = True,
     else:
         rad_files = ['None'
                  for refl_file in refl_files]
+    
+    #if pilot_id is given, we can use that retrieve cam_set and irrad
+    if pilot_id is not None:
+        cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams.csv',
+                              header=0, index_col=0,dtype = 'str')
+        cam_set = cams_db.loc[pilot_id]
+        cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]
+        cam_set = pd.Series.tolist(cam_set)
+        irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
+                               header=0, index_col=0)
+        irrad = irrad_db.loc[pilot_id]
+        irrad = irrad.iloc[1:1+int(irrad.iloc[0])]
+        irrad = pd.Series.tolist(irrad)
+    
+    print cam_set
+    print irrad    
     
     parameters = set_params()
     cam_set = np.asarray(cam_set)
