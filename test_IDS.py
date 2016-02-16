@@ -651,24 +651,26 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
         rad_files = ['None'
                  for refl_file in refl_files]
     
-    #if pilot_id is given, we can use that retrieve cam_set and irrad
+    #if pilot_id is given, we can use that to retrieve
+    #cam_set and irrad from cams.csv and irrad.csv
     if pilot_id is not None:
         cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams.csv',
-                              header=0, index_col=0,dtype = 'str')
+                              header=0, index_col=0, dtype = 'str')
         cam_set = cams_db.loc[pilot_id]
-        cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]
-        cam_set = pd.Series.tolist(cam_set)
+        cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
         irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
                                header=0, index_col=0)
         irrad = irrad_db.loc[pilot_id]
-        irrad = irrad.iloc[1:1+int(irrad.iloc[0])]
-        irrad = pd.Series.tolist(irrad)
+        irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
+    elif cam_set is None or irrad is None:
+        sys.exit("ERROR: either input pilot_id or cam_set + irrad")
     
+    cam_set = np.asarray(cam_set)
+    irrad = np.asarray(irrad)
     print cam_set
     print irrad    
     
     parameters = set_params()
-    cam_set = np.asarray(cam_set)
     #cam_set = np.asarray(parameters[system].keys())
     int_time = np.empty(cam_set.shape, dtype='float32')
     gain = np.empty(cam_set.shape, dtype='float32')
@@ -773,16 +775,16 @@ def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
     
     #NIR is alwasy the 1st band, 550 can be 3rd or 4th
     if image.shape[2] == 4 or image.shape[2] == 5:
-        imf_grn = image[:, :, 3].astype('float32')     
-        imf_nir = image[:, :, 0].astype('float32')  
+        img_grn = image[:, :, 3].astype('float32')     
+        img_nir = image[:, :, 0].astype('float32')  
     elif image.shape[2] == 3:
-        imf_grn = image[:, :, 2].astype('float32')     
-        imf_nir = image[:, :, 0].astype('float32')   
+        img_grn = image[:, :, 2].astype('float32')     
+        img_nir = image[:, :, 0].astype('float32')   
     else:
         raise ValueError("Image dimensions do not appear to be correct.")
         
-    imf_nir = np.ma.masked_equal(imf_nir, 0)
-    chl_image = (imf_nir / imf_grn) - 1.0
+    img_nir = np.ma.masked_equal(img_nir, 0)
+    chl_image = (img_nir / img_grn) - 1.0
     chl_image[chl_image.mask] = mask_val
     chl_image = chl_image.astype('float32')
     
@@ -1000,6 +1002,9 @@ def extract_points(indx_files, shp_file, csv_file, use_local=False,
     
     return output
         
+
+
+    
 
 #==============================================================================
 # this section is related to classification on chl / NDVI image
@@ -1451,11 +1456,13 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
     out_im = np.zeros(im.shape + (3,), dtype='uint8')
     #im[np.isnan(im)] = -1
     
-    mx = imio.imread(max_file)
-    min_mx = np.min(mx[~np.isnan(mx)]) - 0.001
-    max_mx = np.max(mx[~np.isnan(mx)]) + 0.001
+    mx = imio.imread(max_file)    
     mean_mx = np.mean(mx[~np.isnan(mx)])
     std_mx = np.std(mx[~np.isnan(mx)])
+    max_mx = np.max(mx[~np.isnan(mx)]) + 0.001
+    min_mx = np.min(mx[~np.isnan(mx)]) - 0.001
+    if min_mx <= 0.00:
+        min_mx = 0.001
     
     if slices_ext is None:
         if num_classes == 4:
@@ -1465,7 +1472,7 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
             slices_ext = np.array([min_mx, mean_mx*0.8, mean_mx*0.9,
                                    mean_mx*1.1, mean_mx*1.2, max_mx])
     else:
-        slices_ext = slices_ext
+        slices_ext = np.asarray(slices_ext,dtype='float16')
         
     print slices_ext    
     
@@ -1842,3 +1849,123 @@ def chl_classi_matlab(chl_file, bkg_thres=0.4, meanYN=True, ndvi=False,
     #    vecAsp[i] = vecWdth[i] / vecHght[i]
     #    vecExt[i] = statCC[i].extent
     
+    
+#==============================================================================
+# the gen 15 indices part runs into issues with larger files   
+def gen_vi_files(filenames, in_dir, unit='ids5', dummy=None, replace=True):
+    """
+    simple wrapper for vi_with_geo function to generate
+    output filenames, and generate vi images in the output folder.
+        
+    Parameters
+    ----------
+    filenames: str
+        Filename of the IDS5 image file
+    in_dir: str
+        directory of the IDS5 images, not full pathname, just 'registered',
+        'masked', or 'registered masked' etc
+    unit: str
+        DN files, unit='ids5'
+        radiance files, unit='rad5'
+        reflectanc files, unit='refl5'
+    """
+        
+    for filename in filenames:
+        if (filename.endswith(".tif") and (unit in filename.lower())):
+            # generate a good output filename
+            #chl_filename = strops.ireplace("IDS", "chl", filename)
+            #chl_filename = strops.ireplace(in_dir, "output", chl_filename)
+            vi_filename = filename.replace(unit.upper(), (unit.upper()+'_VIs'))
+            vi_filename = vi_filename.replace(in_dir, 'output')
+            dir_name = os.path.dirname(vi_filename)
+            if not os.path.isdir(dir_name):
+                os.makedirs(dir_name)
+
+            if os.path.exists(vi_filename):
+                if not replace:
+                    continue
+                else:
+                    os.remove(vi_filename)
+            try:
+                vi_with_geo(filename, vi_filename=vi_filename)
+                print("Generated VIs for %s" % filename)
+                time.sleep(1)
+            except ValueError:
+                print("Error generating VIs for %s" % filename)
+
+
+def vi_with_geo(image_filename, vi_filename=None, mask_val=-1, save_uint=False):
+    """
+    Takes a registered or registered masked IDS file, reads the data and 
+    geo metadata, cacluates 15 vegetation indices, and writes a new file with
+    the geo metadata.
+    NOTE: the input file has to have 5 bands in the order of nir, red, redge, grn, and blue    
+    Parameters
+    ----------
+    image_filename: str
+        Filename of the IDS image file
+    vi_filename: str (opt)
+        Output filename for the vi file 
+    Returns
+    -------
+    vi_image: 2darray
+        vi image calculated in the program. 
+    """
+
+
+    image = imio.imread(image_filename)
+    
+    spectral_axis = imio.guess_spectral_axis(image) 
+    if spectral_axis == 0:
+        image = imio.axshuffle(image)
+    
+    if image.shape[2] != 5:
+        raise ValueError("Image dimensions do not appear to be correct.")
+    
+    nir = image[:, :, 0].astype('float16')
+    red = image[:, :, 1].astype('float16')
+    redge = image[:, :, 2].astype('float16')
+    grn = image[:, :, 3].astype('float16')
+    blu = image[:, :, 4].astype('float16')
+    
+    vi_img = np.empty(image.shape[:2]+(15,))
+    
+    nir = np.ma.masked_equal(nir, 0)
+    print 'NDVI'
+    vi_img[:,:,0] = (nir-red) / (nir+red)
+    print 'EVI'
+    vi_img[:,:,1] = 2.5 * (nir-red) / (nir + 6.0*red - 7.5*blu + 1.0)
+    print 'Green CI'
+    vi_img[:,:,2] = (nir / grn) - 1.0
+    print 'Red-edge CI'
+    vi_img[:,:,3] = (nir / redge) - 1.0
+    print 'MCARI'
+    vi_img[:,:,4] = (redge-red - 0.2*(redge - grn)) * (redge / red)
+    print 'TCARI'
+    vi_img[:,:,5] = 3*((redge-red) - 0.2*(redge - grn) * (redge / red))
+    print 'OSAVI'
+    vi_img[:,:,6] = (1.0+0.16) * (nir-red) / (nir+red+0.16)
+    print 'MCARI/OSAVI'
+    vi_img[:,:,7] = vi_img[:,:,4] / vi_img[:,:,6]
+    print 'TCARI/OSAVI'
+    vi_img[:,:,8] = vi_img[:,:,5] / vi_img[:,:,6]
+    print 'MTCI'
+    vi_img[:,:,9] = (nir-redge) / (redge-red)
+    #MTVI2
+    #vi_img[:,:,10] = 1.5*(1.2*(nir-grn)-2.5*(red-grn)) / np.sqrt((2.0*nir+1)^2.0 - (6.0*nir) + (5.0*np.sqrt(red)) - 0.5)
+    #MCARI/MTVI2
+    #vi_img[:,:,11] = vi_img[:,:,4] / vi_img[:,:,10]
+    print 'DCNI'    #!!! we're using 750 nm instead of 720 nm !!!
+    vi_img[:,:,12] = (nir-redge) / (redge - red) / (nir-red+0.03)
+    print 'MTCI/NDVI'
+    vi_img[:,:,13] = vi_img[:,:,9] / vi_img[:,:,0]
+    print 'GCI/NDVI'
+    vi_img[:,:,14] = vi_img[:,:,2] / vi_img[:,:,0]
+    
+    vi_img[nir.mask] = mask_val
+    vi_img = vi_img.astype('float16')
+    
+    rastertools.write_geotiff_with_source(image_filename, vi_img,
+            vi_filename, nodata=-1, compress=False)
+
+    return vi_img
