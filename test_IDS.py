@@ -412,7 +412,7 @@ def set_params():
             {"system": "pomona-1",
              "sn": 4102815409,
              "filter": "nir",
-             "int_time": 0.6,       # WARNING !!!
+             "int_time": 0.92,       # WARNING !!!
              "gain": 3.4022E-06,    # the cal coeffs for Pomona 1 were 
              "offset": 3.4688E-03,  # derived from comparing with AVIRIS
              "adj_coeff": 1.0},     # has significant offsets 
