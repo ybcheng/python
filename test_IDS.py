@@ -1430,7 +1430,8 @@ def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
     log.close() 
                                          
 
-def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
+def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None,
+                        classic=True):
     """
     Given an chl classification image, makes a colored version
     this function was a modification from improc.postprocess.colorize_visnir
@@ -1443,14 +1444,19 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
         How many classes in the image
     slices_ext: list
         Pass in your own list of boundaries between slice colors
+    NOTE: the alt color scheme from Yibin's program is
+        [[253,141,60],[255,255,50],[116,196,118],[35,67,132]]
     """
     
-    if num_classes == 4:
-        colors = [[255, 0, 0], [255, 255, 0], [0, 135, 14],
-                  [0, 0, 255]]
-    elif num_classes == 5:
+    if num_classes == 5:
         colors = [[255, 0, 0], [255, 146, 0], [255, 255, 0],
                   [0, 135, 14], [0, 0, 255]]
+    elif num_classes == 4:
+        if classic: #red-yellow-green-blue
+            colors = [[255, 0, 0],[255, 255, 0],[0, 135, 14],[0, 0, 255]]
+        else:       #from Yibin's program
+            colors = [[253, 141, 60],[255, 255, 50],[116, 196, 118],[35, 67, 132]]
+    
     
     im = imio.imread(uniform_file)
     out_im = np.zeros(im.shape + (3,), dtype='uint8')
@@ -1492,7 +1498,7 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None):
     return out_im
 
 
-def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
+def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False, classic=True,
                             loc_mean=True, uniform_file=None, max_file=None,
                             out_filename=None, slices_ext=None):
     """
@@ -1556,7 +1562,7 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False,
     
     try:
         out_im = colorize_chl_classi(uniform_file, max_file, num_classes,
-                                     slices_ext=slices_ext)                  
+                                     classic=classic, slices_ext=slices_ext)                  
         if out_filename is None:
             out_filename = uniform_file.replace('uniform', 'class')
         else:
