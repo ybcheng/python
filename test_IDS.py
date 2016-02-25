@@ -581,7 +581,7 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     refl_img = np.zeros(rad_img.shape, dtype=dn_img.dtype)
     
     for i in range(dn_img.shape[2]):
-        rad_img[:,:,i] = (dn_img[:,:,i]/int_time[i] * gain[i] + offset[i]) * 10000
+        rad_img[:,:,i] = (dn_img[:,:,i]/int_time[i] * gain[i] + offset[i])*10000
         refl_img[:,:,i] = rad_img[:,:,i]/irrad[i] * 3.14159265
         
     rad_img[dn_img.mask] = 0.0
@@ -702,7 +702,8 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
 # this section is about chl index calculation and a little post processing
 # making histogram like bar chart for reporting
 
-def gen_chl_files(filenames, in_dir, unit='ids', dummy=None, replace=True):
+def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
+                  dummy=None, replace=True):
     """
     simple wrapper for chl_with_geo function to generate
     output filenames, and generate chl images in the output folder.
@@ -738,14 +739,14 @@ def gen_chl_files(filenames, in_dir, unit='ids', dummy=None, replace=True):
                 else:
                     os.remove(chl_filename)
             try:
-                chl_with_geo(filename, chl_filename=chl_filename)
+                chl_with_geo(filename, chl_filename=chl_filename, scale=scale)
                 print("Generated chl for %s" % filename)
                 time.sleep(1)
             except ValueError:
                 print("Error generating chl for %s" % filename)
 
 
-def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
+def chl_with_geo(image_filename, scale=0.0001, chl_filename=None, mask_val=-1,
                  save_uint=False):
     """
     Takes a registered or registered masked IDS file, reads the data and 
@@ -759,7 +760,9 @@ def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
     image_filename: str
         Filename of the IDS image file
     chl_filename: str (opt)
-        Output filename for the chl file 
+        Output filename for the chl file
+    scaling: floating point
+        in case scaling was applied to reflectance files, use this to take care of it
     Returns
     -------
     chl_image: 2darray
@@ -775,11 +778,11 @@ def chl_with_geo(image_filename, chl_filename=None, mask_val=-1,
     
     #NIR is alwasy the 1st band, 550 can be 3rd or 4th
     if image.shape[2] == 4 or image.shape[2] == 5:
-        img_grn = image[:, :, 3].astype('float32')     
-        img_nir = image[:, :, 0].astype('float32')  
+        img_grn = image[:, :, 3].astype('float32') * scale    
+        img_nir = image[:, :, 0].astype('float32') * scale 
     elif image.shape[2] == 3:
-        img_grn = image[:, :, 2].astype('float32')     
-        img_nir = image[:, :, 0].astype('float32')   
+        img_grn = image[:, :, 2].astype('float32') * scale    
+        img_nir = image[:, :, 0].astype('float32') * scale  
     else:
         raise ValueError("Image dimensions do not appear to be correct.")
         
