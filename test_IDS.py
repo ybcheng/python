@@ -29,11 +29,11 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from skimage import filters, morphology, feature
 
-from ..imops import imio
+from ..imops import imio, imcalcs
 from ..gis import rastertools, shapetools, extract
 from ..gen import strops
 from ..cv import classify, slicing
-from ..dbops import finder, loader
+from ..dbops import finder, loader, parse
 from . import anisodiff2y3d
 
 
@@ -360,6 +360,57 @@ def calc_iarr_with_geo(filename, iarr_filename):
     return iarr
     
 
+def proc_sphere(filenames, db_path, DST=True, avg_num=3, trim_x=350, trim_y=250):
+    """
+    function to process images and db from calibration with integrating sphere
+    it does two things, baciscally:
+    1. calc average of the center n images; 2. calc average amp for that n images
+    Note: the db needs to be in specific format. the script won't work if it's not
+    
+    Parameters:
+    ----
+    filenames: list
+        full path of the files to be processed
+    db_path: str
+        full path of the db file exported from HelioSense software
+    DST: bool
+        images were taken during daylight saving time or not
+    avg_num: int
+        how many images to take average
+    trim_x, trim_y: int
+        how many pixels from the edge to take out of original images
+    """
+        
+    if np.remainder(len(filenames), avg_num) != 0:
+        sys.exit("ERROR: check number of files")
+        
+    db = pd.read_csv(db_path, header=6, dtype='float64')
+    #db = db.dropna(axis=0, how='all')
+    #db = db.dropna(axis=1, how='all')
+    db.iloc[:,0] = db.iloc[:,0].apply(np.round)
+    db = db.set_index(db.iloc[:,0])
+    amps = np.empty(np.shape(filenames), dtype='float64')
+    
+    for i in range(len(filenames)):
+        f_split = os.path.basename(filenames[i]).split('_')
+        if DST is True:
+            img_time = int(time.mktime(time.strptime((f_split[1]+" "+f_split[2]),
+                                                 '%H-%M-%S %Y-%m-%d'))-time.timezone+3600)
+        else:
+            img_time = int(time.mktime(time.strptime((f_split[1]+" "+f_split[2]),
+                                                 '%H-%M-%S %Y-%m-%d'))-time.timezone)
+        amps[i] = db.loc[img_time]['amps']
+    
+    print("img average:")
+    for i in np.arange(0, len(filenames), avg_num):
+        img = imcalcs.average(filenames[i:i+avg_num])
+        print np.average(img[trim_x:-trim_x, trim_y:-trim_y])
+    print("")
+    print("amp average:")
+    for i in np.arange(0, len(amps), avg_num):
+        print np.average(amps[i:i+avg_num])
+        
+        
 def set_params():
     """
     Definitions of camera parameters related to radiometric calibration.
@@ -480,37 +531,37 @@ def set_params():
              "gain": 2.66E-06,  #3.36E-06
              "offset": 0,
              "adj_coeff": 1.0},
-        "412":
+        "412":  #sphere
             {"system": "lympha-1",
              "sn": 4102815412,
              "filter": "nir",
              "int_time": 0.7,
-             "gain": 2.88E-06,
-             "offset": 0,
+             "gain": 2.4864E-06,    #2.88E-06,
+             "offset": 2.2256E-02,
              "adj_coeff": 1.0},
-        "399":
+        "399":  #sphere
             {"system": "lympha-1",
              "sn": 4102815399,
              "filter": "red",
              "int_time": 1.1,
-             "gain": 3.17E-06,
-             "offset": 0,
+             "gain": 2.7580E-06,    #3.17E-06,
+             "offset": 1.5958E-02,
              "adj_coeff": 1.0},
-        "405":
+        "405":  #sphere
             {"system": "lympha-4",
              "sn": 4102815405,
              "filter": "nir",
-             "int_time": 0.9,
-             "gain": 3.33E-06,
-             "offset": 0,
+             "int_time": 0.7,
+             "gain": 2.6633E-06,    #3.33E-06
+             "offset": 0,    #-7.2552E-03,
              "adj_coeff": 1.0},
-        "682":
+        "682":  #sphere
             {"system": "lympha-4",
              "sn": 4102760682,
              "filter": "red",
              "int_time": 1.1,
-             "gain": 3.05E-06,
-             "offset": 0,
+             "gain": 2.5477E-06,    #3.05E-06
+             "offset": 1.6847E-02,
              "adj_coeff": 1.0},
         "610":
             {"system": "lympha-3",
@@ -539,8 +590,9 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
               irrad=[1.0,1.0,1.0,1.0,1.0]):
     """
     function that transfer dn to radiance and reflectance using calibration 
-    coefficients and simulated irradiance. A scale of 10,000 is applied to both
-    radiance and reflectance to save processing time and file size
+    coefficients and simulated irradiance.
+    NOTE: GDAL does not support float16 dtype. To save processing time and 
+    file size, A scale of 10,000 is applied to both radiance and reflectance 
     
     Parameters
     ----------
@@ -585,7 +637,7 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
         refl_img[:,:,i] = rad_img[:,:,i]/irrad[i] * 3.14159265
         
     rad_img[dn_img.mask] = 0.0
-    rad_img = rad_img.astype('uint16')
+    rad_img = rad_img.astype('uint16')  #GDAL has trouble with 16bit floating point
     refl_img[dn_img.mask] = 0.0
     refl_img = refl_img.astype('uint16')
         
@@ -599,7 +651,8 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
 
 def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
                     cam_set = ['611','612','421','902','635'],
-                    irrad = [0.5668, 0.7177, 0.6621, 0.8321, 0.9027]):                     
+                    irrad = [0.5668, 0.7177, 0.6621, 0.8321, 0.9027],
+                    int_time = None):                     
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
     dn_files should be in either "masked", "mosaic", "registered",
@@ -667,23 +720,30 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
     
     cam_set = np.asarray(cam_set)
     irrad = np.asarray(irrad)
-    print cam_set
-    print irrad    
-    
+        
     parameters = set_params()
     #cam_set = np.asarray(parameters[system].keys())
-    int_time = np.empty(cam_set.shape, dtype='float32')
     gain = np.empty(cam_set.shape, dtype='float32')
     offset = np.empty(cam_set.shape, dtype='float32')
     
     for i in range(len(cam_set)):       
-        int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
         gain[i] = parameters["ids"][cam_set[i]]["gain"]
         offset[i] = parameters["ids"][cam_set[i]]["offset"]
-        #int_time[i] = parameters[system][str(i)]["int_time"]
         #gain[i] = parameters[system][str(i)]["gain"]
         #offset[i] = parameters[system][str(i)]["offset"]                  
         
+    if int_time is not None:
+        int_time = np.asarray(int_time)
+    else:
+        int_time = np.empty(cam_set.shape, dtype='float32')
+        for i in range(len(cam_set)):
+            int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
+            #int_time[i] = parameters[system][str(i)]["int_time"]
+            
+    print "cam_set = %s" %(cam_set)
+    print "irrad = %s" %(irrad)
+    print "int_time = %s" %(int_time)
+    
     for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
         if os.path.exists(refl) and not replace:
             print "reflectance file exists, skipping %s" %(dn)
@@ -934,10 +994,8 @@ def get_acreage_from_filename(filename):
     find acreage based on an input filename
     """
     
-    fid = finder.get_fid_from_filename(filename)
-    
-    db = loader.LoadDb()
-    fields = db.tables['Fields']
+    fid = parse.get_fid_from_filename(filename)
+    fields = loader.get_table('Fields')
     auto_acre = fields.loc[fid].Auto_acres
     
     return auto_acre
