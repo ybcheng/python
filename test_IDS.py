@@ -389,7 +389,7 @@ def proc_sphere(filenames, db_path, DST=True, avg_num=3, trim_x=350, trim_y=250)
     #db = db.dropna(axis=1, how='all')
     db.iloc[:,0] = db.iloc[:,0].apply(np.round)
     db = db.set_index(db.iloc[:,0])
-    amps = np.empty(np.shape(filenames), dtype='float64')
+    amps = np.zeros(np.shape(filenames), dtype='float64')
     
     for i in range(len(filenames)):
         f_split = os.path.basename(filenames[i]).split('_')
@@ -399,7 +399,10 @@ def proc_sphere(filenames, db_path, DST=True, avg_num=3, trim_x=350, trim_y=250)
         else:
             img_time = int(time.mktime(time.strptime((f_split[1]+" "+f_split[2]),
                                                  '%H-%M-%S %Y-%m-%d'))-time.timezone)
-        amps[i] = db.loc[img_time]['amps']
+        try:
+            amps[i] = db.loc[img_time]['amps']
+        except (KeyError, ValueError):
+            print("Error matching images and db: %i" %img_time)
     
     print("img average:")
     for i in np.arange(0, len(filenames), avg_num):
@@ -407,8 +410,9 @@ def proc_sphere(filenames, db_path, DST=True, avg_num=3, trim_x=350, trim_y=250)
         print np.average(img[trim_x:-trim_x, trim_y:-trim_y])
     print("")
     print("amp average:")
+    amps = np.ma.masked_equal(amps,0)
     for i in np.arange(0, len(amps), avg_num):
-        print np.average(amps[i:i+avg_num])
+        print np.ma.average(amps[i:i+avg_num])
         
         
 def set_params():
@@ -459,46 +463,86 @@ def set_params():
              "gain": 4.25458E-06,
              "offset": 0,
              "adj_coeff": 1.0},
-        "409":
+        "409":  #sphere w new lens and filter
             {"system": "pomona-1",
              "sn": 4102815409,
              "filter": "nir",
-             "int_time": 0.92,       # WARNING !!!
-             "gain": 3.4022E-06,    # the cal coeffs for Pomona 1 were 
-             "offset": 3.4688E-03,  # derived from comparing with AVIRIS
-             "adj_coeff": 1.0},     # has significant offsets 
-        "404":                  
+             "int_time": 0.9,
+             "gain": 3.0257E-06, 
+             "offset": 8.8847E-03,
+             "adj_coeff": 1.0},
+        "404":  #sphere                  
             {"system": "pomona-1",
              "sn": 4102815404,
              "filter": "red",
-             "int_time": 0.8,
-             "gain": 2.0800E-06,    #
-             "offset": 8.235E-03,   #
+             "int_time": 1.2,
+             "gain": 2.9036E-06,    
+             "offset":1.7608E-02,   
              "adj_coeff": 1.0},
-        "400":
+        "400":  #sphere
             {"system": "pomona-1",
              "sn": 4102815400,
              "filter": "red_edge",
-             "int_time": 1.15,
-             "gain": 2.9944E-06,    #
-             "offset": 2.9447E-02,  #
+             "int_time": 1.1,
+             "gain": 2.4954E-06,
+             "offset": 1.6374E-02,
              "adj_coeff": 1.0},
-        "413":
+        "413":  #sphere
             {"system": "pomona-1",
              "sn": 4102815413,
              "filter": "green",
-             "int_time": 0.95,
-             "gain": 3.8282E-06,    #
-             "offset": 7.5872E-03,  #
+             "int_time": 1.6,
+             "gain": 3.3851E-06,
+             "offset": 1.5234E-02,
              "adj_coeff": 1.0},
-        "408":
+        "408":  #sphere
             {"system": "pomona-1",
              "sn": 4102815408,
              "filter": "blue",
-             "int_time": 0.92,
-             "gain": 1.3821E-06,    #
-             "offset": 2.3604E-02,  #
+             "int_time": 2.2,
+             "gain": 4.7004E-06,
+             "offset": 15717E-02,
              "adj_coeff": 1.0},     
+        #"409":
+        #    {"system": "pomona-1",
+        #     "sn": 4102815409,
+        #     "filter": "nir",
+        #     "int_time": 0.92,       # WARNING !!!
+        #     "gain": 3.4022E-06,    # the cal coeffs for Pomona 1 were 
+        #     "offset": 3.4688E-03,  # derived from comparing with AVIRIS
+        #     "adj_coeff": 1.0},     # has significant offsets 
+        #"404":                  
+        #    {"system": "pomona-1",
+        #     "sn": 4102815404,
+        #     "filter": "red",
+        #     "int_time": 0.8,
+        #     "gain": 2.0800E-06,    #
+        #     "offset": 8.235E-03,   #
+        #     "adj_coeff": 1.0},
+        #"400":
+        #    {"system": "pomona-1",
+        #     "sn": 4102815400,
+        #     "filter": "red_edge",
+        #     "int_time": 1.15,
+        #     "gain": 2.9944E-06,    #
+        #     "offset": 2.9447E-02,  #
+        #     "adj_coeff": 1.0},
+        #"413":
+        #    {"system": "pomona-1",
+        #     "sn": 4102815413,
+        #     "filter": "green",
+        #     "int_time": 0.95,
+        #     "gain": 3.8282E-06,    #
+        #     "offset": 7.5872E-03,  #
+        #     "adj_coeff": 1.0},
+        #"408":
+        #    {"system": "pomona-1",
+        #     "sn": 4102815408,
+        #     "filter": "blue",
+        #     "int_time": 0.92,
+        #     "gain": 1.3821E-06,    #
+        #     "offset": 2.3604E-02,  #
+        #     "adj_coeff": 1.0},
         "403":
             {"system": "lympha-5",
              "sn": 4102815403,
@@ -553,7 +597,7 @@ def set_params():
              "filter": "nir",
              "int_time": 0.7,
              "gain": 2.6633E-06,    #3.33E-06
-             "offset": 0,    #-7.2552E-03,
+             "offset": 0, #-7.2552E-03, !!!not sure about this offset!!!
              "adj_coeff": 1.0},
         "682":  #sphere
             {"system": "lympha-4",
@@ -650,9 +694,7 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
 
 
 def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
-                    cam_set = ['611','612','421','902','635'],
-                    irrad = [0.5668, 0.7177, 0.6621, 0.8321, 0.9027],
-                    int_time = None):                     
+                    cam_set = None, irrad = None, int_time = None):                     
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
     dn_files should be in either "masked", "mosaic", "registered",
@@ -671,7 +713,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
     pilot_id: int
         a database of cam_set and irrad is stored in irrad.csv and cams.csv
         pilot_id is used to retrieve the correct info based on pilot number
-    cam_set: str array
+    cam_set: str array, e.g. ['611','612','421','902','635']
         last three digits of s/n of cameras used, in the order and band number
         it's used to generate int_time, gain, offset arrays:        
         (int_time: float array
@@ -680,7 +722,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
              calibration coefficient
          offset: float array
              calibration coefficient)        
-    irrad: float array
+    irrad: float array, e.g. [0.5668, 0.7177, 0.6621, 0.8321, 0.9027]
         simulated irradiance, in the order of band number   
     """
     
