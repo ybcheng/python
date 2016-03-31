@@ -31,7 +31,7 @@ from skimage import filters, morphology, feature
 
 from ..imops import imio, imcalcs
 from ..gis import rastertools, shapetools, extract
-from ..gen import strops
+from ..gen import strops, dirfuncs, wrappers
 from ..cv import classify, slicing
 from ..dbops import finder, loader, parse
 from . import anisodiff2y3d
@@ -39,6 +39,19 @@ from . import anisodiff2y3d
 
 #==============================================================================
 # this section is mostly utilities for preprocessing and etc
+
+def gen_process_dir(base_dir):
+    """
+    generated processing directories for a given base folder
+    to be used locally, e.g. 'd:/temp/'
+    """
+    
+    sub_dirs = ["", "processing/", "mosaic/", "dem/", "registered/", "output/",
+                "masked/", "physical/", "color/", "registered merged/", 
+                "registered masked/", "color merged/"]        
+    for s in sub_dirs:
+        dirfuncs.gen_dir((base_dir + s))
+
 
 def gen_imu2(file_path, imufile, imufile2, ext='.tif'):
     """
@@ -246,6 +259,36 @@ def stack(input_dir, output_dir, in_ext='.png', out_ext='.tif'):
         imio.imsave(out,stacked)
        
         
+def get_coordinate(pilot_id):
+    """
+    report geographic coordinate of fields flown over in a flight
+    
+    Parameters
+    ----------
+    pilot_id: int
+        flight id
+    """
+    
+    flightobs = loader.get_table('FlightObs')
+    fields = loader.get_table('Fields')
+    
+    field_ids = flightobs[flightobs['Flight_ID']==pilot_id]['Field_ID']
+    field_ids = np.asarray(field_ids)
+    
+    min_lat = min(fields['Lat1'].loc[field_ids])
+    min_long = min(fields['Long1'].loc[field_ids])
+    max_lat = max(fields['Lat2'].loc[field_ids])
+    max_long = max(fields['Long2'].loc[field_ids])    
+    
+    print ('min_lat:', min_lat)
+    print ('min_long:', min_long)
+    print ('max_lat:', max_lat)
+    print ('max_long:', max_long)
+    print ('avg_lat:', np.average([min_lat, max_lat]))
+    print ('avg_long:', np.average([min_long, max_long]))
+    print ("%.3f, %.3f, %.3f, %.3f" %(min_long, min_lat, max_long, max_lat))
+
+
 #==============================================================================
 # this section is about radiometric calibration and atmospheric correction
 # including IARR, empirical line, and applying cal coeff and SMARTS output
@@ -406,14 +449,14 @@ def proc_sphere(filenames, db_path, DST=True, avg_num=3, trim_x=350, trim_y=250)
     
     print("img average:")
     for i in np.arange(0, len(filenames), avg_num):
-        img = imcalcs.average(filenames[i:i+avg_num])
-        print np.average(img[trim_x:-trim_x, trim_y:-trim_y])
+        img = imcalcs.average(filenames[i:i+avg_num])        
+        print(np.average(img[trim_x:-trim_x, trim_y:-trim_y]))
     print("")
     print("amp average:")
     amps = np.ma.masked_equal(amps,0)
     for i in np.arange(0, len(amps), avg_num):
-        print np.ma.average(amps[i:i+avg_num])
-        
+        print(np.ma.average(amps[i:i+avg_num]))
+            
         
 def set_params():
     """
@@ -611,7 +654,7 @@ def set_params():
             {"system": "lympha-3",
              "sn": 4102887610,
              "filter": "nir",
-             "int_time": 0.9,
+             "int_time": 0.7,
              "gain": 1.0E-00,
              "offset": 0,
              "adj_coeff": 1.0},
@@ -622,11 +665,28 @@ def set_params():
              "int_time": 1.1,
              "gain": 1.0E-00,
              "offset": 0,
+             "adj_coeff": 1.0},
+        "899":
+            {"system": "lympha-6",
+             "sn": 4102833899,
+             "filter": "nir",
+             "int_time": 0.7,
+             "gain": 3.1746E-06,
+             "offset": 3.0352E-02,
+             "adj_coeff": 1.0},
+        "614":
+            {"system": "lympha-6",
+             "sn": 4102887614,
+             "filter": "red",
+             "int_time": 1.1,
+             "gain": 2.8065E-06,
+             "offset": 1.8066E-02,
              "adj_coeff": 1.0}             
         }    
         
     return locals()    
         
+
 def dn_2_refl(dn_filename, refl_filename, rad_filename = None, 
               int_time=[1.0,1.0,1.0,1.0,1.0],
               gain=[1.0,1.0,1.0,1.0,1.0],
@@ -693,14 +753,18 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     return rad_img, refl_img
 
 
-def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
+def dn_2_refl_files(dn_files, rad = False, replace = False, new_order=False,
                     cam_set = None, irrad = None, int_time = None):                     
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
     dn_files should be in either "masked", "mosaic", "registered",
     "registered masked", or "registered merged" folder
-    all the dn_files are supposed to be captured with one system
-    hence int_time, gain, offset should be good for all the files
+    all the dn_files are supposed to be captured with one system during one flight
+    hence int_time, gain, offset, and pilot_id should be good for all the files
+    a database of cam_set and irrad is stored in irrad.csv and cams.csv
+    pilot_id is retieved from filenames and then used to retrieve
+    the correct info of cam_set and irradidance
+    cam_set, irrad, int_time can be overwritten if it's given
     
     Parameters
     ----------
@@ -708,11 +772,8 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
         files that are in DN to be processed
     rad: bool
         to generate radiance file or not
-    replce: bool
-        to replace reflectance file or not if it's been generated before
-    pilot_id: int
-        a database of cam_set and irrad is stored in irrad.csv and cams.csv
-        pilot_id is used to retrieve the correct info based on pilot number
+    replace: bool
+        to replace reflectance file or not if it's already generated
     cam_set: str array, e.g. ['611','612','421','902','635']
         last three digits of s/n of cameras used, in the order and band number
         it's used to generate int_time, gain, offset arrays:        
@@ -723,7 +784,11 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
          offset: float array
              calibration coefficient)        
     irrad: float array, e.g. [0.5668, 0.7177, 0.6621, 0.8321, 0.9027]
-        simulated irradiance, in the order of band number   
+        simulated irradiance, in the order of band number
+    int_time: float array, e.g. [1.1, 1.2, 1.3, 1.4, 1.5]
+        use this to overide parameters set in the script
+    new_order: bool
+        band order out of alignMosaicIDS is nir, red, grn, redge, blue
     """
     
     #dn_files = glob.glob(input_dir + '*IDS*' + img_ext) #because we don't process FLIR images
@@ -748,17 +813,27 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
     
     #if pilot_id is given, we can use that to retrieve
     #cam_set and irrad from cams.csv and irrad.csv
-    if pilot_id is not None:
-        cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams.csv',
-                              header=0, index_col=0, dtype = 'str')
-        cam_set = cams_db.loc[pilot_id]
-        cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
-        irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
-                               header=0, index_col=0)
-        irrad = irrad_db.loc[pilot_id]
-        irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
+    if cam_set is None and irrad is None:
+        pilot_id = parse.get_flight_from_filename(dn_files[0])        
+        try:
+            if new_order is True:
+                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams2.csv',
+                                      header=0, index_col=0, dtype = 'str')
+                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad2.csv',
+                                       header=0, index_col=0)
+            else:
+                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams1.csv',
+                                      header=0, index_col=0, dtype = 'str')
+                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad1.csv',
+                                       header=0, index_col=0)                
+            cam_set = cams_db.loc[pilot_id]
+            cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
+            irrad = irrad_db.loc[pilot_id]
+            irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
+        except KeyError:
+            sys.exit("EROOR: check database")
     elif cam_set is None or irrad is None:
-        sys.exit("ERROR: either input pilot_id or cam_set + irrad")
+        sys.exit("ERROR: either input pilot_id or cam_set & irrad")
     
     cam_set = np.asarray(cam_set)
     irrad = np.asarray(irrad)
@@ -782,30 +857,105 @@ def dn_2_refl_files(dn_files, rad = False, replace = True, pilot_id = 473,
             int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
             #int_time[i] = parameters[system][str(i)]["int_time"]
             
-    print "cam_set = %s" %(cam_set)
-    print "irrad = %s" %(irrad)
-    print "int_time = %s" %(int_time)
+    print("cam_set = %s" %(cam_set))
+    print("irrad = %s" %(irrad))
+    print("int_time = %s" %(int_time))
     
     for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
         if os.path.exists(refl) and not replace:
-            print "reflectance file exists, skipping %s" %(dn)
+            print("reflectance file exists, skipping %s" % dn)
         else:
             #if os.path.exists(refl):
             #    os.remove(refl)                    
             try:
                 dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
                           gain=gain, offset=offset, irrad=irrad)
-                print "processed %s" %(dn)
+                print("processed %s" % dn)
             except ValueError:
-                print "error processing %s" %(dn)
+                print("error processing %s" % dn)
             
                   
+def dn_2_refl_pilot(filepaths, replace = False):                     
+    """
+    this one is similar to dn_2_refl_files but much less flexible
+    it's mainly for production, not for R&D, thus requires everything set in place
+    simple wrapper to transfer DN to reflectance for a given flight
+    dn_files should be in either "masked", "mosaic", "registered",
+    "registered masked", or "registered merged" folder
+    all the dn_files are supposed to be captured with one system during one flight
+    hence int_time, gain, offset, and pilot_id should be good for all the files
+    a database of cam_set and irrad is stored in irrad.csv and cams.csv
+    pilot_id is retieved from filenames and then used to retrieve
+    the correct info of cam_set and irradidance
+    
+    Parameters
+    ----------
+    filepaths: list
+        full path of the files to be processed
+    repalce: bool
+        to replace reflectance file or not if it's already generated
+    """
+    
+    #dn_files = glob.glob(input_dir + '*IDS*' + img_ext) #because we don't process FLIR images
+    # generates output filenames
+    dn_files = [f for f in filepaths if f.endswith('.tif') and 'IDS' in f]    
+    refl_files = [dn_file.replace('registered masked', 'physical')
+                  for dn_file in dn_files]
+    refl_files = [refl_file.replace('registered merged', 'physical')
+                  for refl_file in refl_files]
+    refl_files = [refl_file.replace('registered', 'physical')
+                  for refl_file in refl_files]
+    refl_files = [refl_file.replace('mosaic', 'physical')
+                  for refl_file in refl_files]
+    refl_files = [refl_file.replace('masked', 'physical')
+                  for refl_file in refl_files]  
+    rad_files = ['None' for refl_file in refl_files]
+    
+    for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
+        if os.path.exists(refl) and not replace:
+            print("reflectance file exists, skipping %s" % dn)
+        else:
+            try:
+                pilot_id = parse.get_flight_from_filename(dn)
+                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams1.csv',
+                                      header=0, index_col=0, dtype = 'str')
+                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad1.csv',
+                                       header=0, index_col=0)
+                cam_set = cams_db.loc[pilot_id]
+                cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
+                cam_set = np.asarray(cam_set)
+                irrad = irrad_db.loc[pilot_id]
+                irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
+                irrad = np.asarray(irrad)
+        
+                parameters = set_params()
+    
+                gain = np.empty(cam_set.shape, dtype='float32')
+                offset = np.empty(cam_set.shape, dtype='float32')
+                int_time = np.empty(cam_set.shape, dtype='float32')
+    
+                for i in range(len(cam_set)):       
+                    gain[i] = parameters["ids"][cam_set[i]]["gain"]
+                    offset[i] = parameters["ids"][cam_set[i]]["offset"]
+                    int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
+             
+                dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
+                          gain=gain, offset=offset, irrad=irrad)
+                print("processed %s" % dn)
+            except (KeyError, ValueError):
+                print("error processing %s" % dn)
+
+
+refl_watch = wrappers.gen_watcher(dn_2_refl_pilot, wrappers.gen_applier,
+                                   wkwargs=dict(change_delay=30))
+                                   
+                                   
 #==============================================================================
 # this section is about chl index calculation and a little post processing
 # making histogram like bar chart for reporting
 
 def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
-                  dummy=None, replace=True):
+                  dummy=None, replace=True, new_order=False):
     """
     simple wrapper for chl_with_geo function to generate
     output filenames, and generate chl images in the output folder.
@@ -816,12 +966,14 @@ def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
     filenames: str
         Filename of the IDS5 image file
     in_dir: str
-        directory of the IDS5 images, not full pathname, just registered,
-        masked, or registered masked etc
+        directory of the IDS5 images, not full pathname, just "registered",
+        "masked", or "registered masked" etc
     unit: str
         DN files, unit='ids'
         radiance files, unit='rad'
         reflectanc files, unit='refl'
+    new_order: bool
+        band order out of alignMosaicIDS is nir, red, grn, redge, blue
     """
         
     for filename in filenames:
@@ -841,7 +993,8 @@ def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
                 else:
                     os.remove(chl_filename)
             try:
-                chl_with_geo(filename, chl_filename=chl_filename, scale=scale)
+                chl_with_geo(filename, chl_filename=chl_filename, scale=scale,
+                             new_order=new_order)
                 print("Generated chl for %s" % filename)
                 time.sleep(1)
             except ValueError:
@@ -849,7 +1002,7 @@ def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
 
 
 def chl_with_geo(image_filename, scale=0.0001, chl_filename=None, mask_val=-1,
-                 save_uint=False):
+                 save_uint=False, new_order=True):
     """
     Takes a registered or registered masked IDS file, reads the data and 
     geo metadata, and writes a new file with chl information and 
@@ -878,15 +1031,19 @@ def chl_with_geo(image_filename, scale=0.0001, chl_filename=None, mask_val=-1,
     if spectral_axis == 0:
         image = imio.axshuffle(image)
     
-    #NIR is alwasy the 1st band, 550 can be 3rd or 4th
-    if image.shape[2] == 4 or image.shape[2] == 5:
-        img_grn = image[:, :, 3].astype('float32') * scale    
-        img_nir = image[:, :, 0].astype('float32') * scale 
-    elif image.shape[2] == 3:
+    if new_order is True:   #auto-aligned 5 bands
         img_grn = image[:, :, 2].astype('float32') * scale    
-        img_nir = image[:, :, 0].astype('float32') * scale  
+        img_nir = image[:, :, 0].astype('float32') * scale
     else:
-        raise ValueError("Image dimensions do not appear to be correct.")
+        #NIR is alwasy the 1st band, 550 can be 3rd or 4th
+        if image.shape[2] == 4 or image.shape[2] == 5:
+            img_grn = image[:, :, 3].astype('float32') * scale    
+            img_nir = image[:, :, 0].astype('float32') * scale 
+        elif image.shape[2] == 3:
+            img_grn = image[:, :, 2].astype('float32') * scale    
+            img_nir = image[:, :, 0].astype('float32') * scale  
+        else:
+            raise ValueError("Image dimensions do not appear to be correct.")
         
     img_nir = np.ma.masked_equal(img_nir, 0)
     chl_image = (img_nir / img_grn) - 1.0
@@ -985,12 +1142,12 @@ def percent_plot(input_file, bg_value=None, auto_acre=None, auto_acre_new=None,
     # find total acreage
     y = y * auto_acre_new
 
-    print os.path.basename(input_file)
-    print "!!!auto acreage does NOT work with subfields!!!"
-    print auto_acre, ' / ' ,auto_acre_new, ' / ' ,sum(y[1:-1])
-    print slices
-    print heights
-    print y
+    print(os.path.basename(input_file))
+    print("!!!auto acreage does NOT work with subfields!!!")
+    print(auto_acre, ' / ', auto_acre_new, ' / ', sum(y[1:-1]))
+    print(slices)
+    print(heights)
+    print(y)
     
     fig = plt.figure()
     ax = plt.gca()
@@ -1060,7 +1217,7 @@ def get_sub_acreage(filename):
         for j in range(len(sub_ids)):
             if unq_ids[i] == sub_ids[j]:
                 unq_areas[i]=unq_areas[i]+float(areas[j])
-        print unq_ids[i], unq_areas[i]         
+        print(unq_ids[i], unq_areas[i])         
 
 
 def extract_points(indx_files, shp_file, csv_file, use_local=False,
@@ -1164,10 +1321,10 @@ def count_class(image_filename, plots=True,
         
     for i in range(len(counts)-1):
         heights[i] = float(counts[i])/float(sum(counts[:-1]))
-        print "color%s: %s, %.4f" %(i, counts[i], heights[i])
+        print("color%s: %s, %.4f" % (i, counts[i], heights[i]))
            
     if img.shape[0]*img.shape[1] != sum(counts):
-        print "ERROR!!! sums don't match"
+        print("ERROR!!! sums don't match")
         
     if plots:
         fig = plt.figure()
@@ -1360,16 +1517,16 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
     max_of_max = np.max(loc_mean[chl_img_max])
     mean_of_max = np.mean(loc_mean[chl_img_max])
     std_of_max = np.std(loc_mean[chl_img_max])
-    print     
-    print "max: %.4f" %(max_of_max)
-    print "mean: %.4f" %(mean_of_max)
-    print "std dev: %.4f" %(std_of_max)
-    print "5 bins:"
-    print "%.4f, %.4f" %(mean_of_max*0.5, mean_of_max*0.8)
-    print "%.4f, %.4f" %(mean_of_max*0.8, mean_of_max*0.9)
-    print "%.4f, %.4f" %(mean_of_max*0.9, mean_of_max*1.1)
-    print "%.4f, %.4f" %(mean_of_max*1.1, mean_of_max*1.2)
-    print "%.4f, %.4f" %(mean_of_max*1.2, mean_of_max*1.5)      
+    print()    
+    print("max: %.4f" % max_of_max)
+    print("mean: %.4f" % mean_of_max)
+    print("std dev: %.4f" % std_of_max)
+    print("5 bins:")
+    print("%.4f, %.4f" % (mean_of_max*0.5, mean_of_max*0.8))
+    print("%.4f, %.4f" % (mean_of_max*0.8, mean_of_max*0.9))
+    print("%.4f, %.4f" % (mean_of_max*0.9, mean_of_max*1.1))
+    print("%.4f, %.4f" % (mean_of_max*1.1, mean_of_max*1.2))
+    print("%.4f, %.4f" % (mean_of_max*1.2, mean_of_max*1.5))     
     
     log = open(log_file, 'w')
     log.write(" background_threshold=%s\n" %(bkg_thres))
@@ -1402,8 +1559,8 @@ def chl_classi_loc_mean(chl_file, bkg_thres=0.75, ndvi=False,
         imgplot.set_clim(l_lim, u_lim)
         #plt.colorbar()    
 
-    print "--- %.2f seconds ---" %(time.time() - start_time)
-    print
+    print("--- %.2f seconds ---" % (time.time() - start_time))
+    print()
 
 
 def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
@@ -1510,16 +1667,16 @@ def chl_classi_loc_max(chl_file, ndvi=True, uniform_file=None, max_file=None,
     max_of_max = np.max(chl_img[chl_img_max])
     mean_of_max = np.mean(chl_img[chl_img_max])
     std_of_max = np.std(chl_img[chl_img_max])
-    print "max: ", max_of_max
-    print "mean: ", mean_of_max
-    print "std dev: ", std_of_max
-    print "5 bins: "
-    print mean_of_max*0.5, mean_of_max*0.8
-    print mean_of_max*0.8, mean_of_max*0.9
-    print mean_of_max*0.9, mean_of_max*1.1
-    print mean_of_max*1.1, mean_of_max*1.2
-    print mean_of_max*1.2, mean_of_max*1.5
-    print
+    print("max: ", max_of_max)
+    print("mean: ", mean_of_max)
+    print("std dev: ", std_of_max)
+    print("5 bins: ")
+    print(mean_of_max*0.5, mean_of_max*0.8)
+    print(mean_of_max*0.8, mean_of_max*0.9)
+    print(mean_of_max*0.9, mean_of_max*1.1)
+    print(mean_of_max*1.1, mean_of_max*1.2)
+    print(mean_of_max*1.2, mean_of_max*1.5)
+    print()
     
     log = open(log_file, 'w')
     log.write(" background_threshold=%s\n" %(bkg_thres))
@@ -1583,7 +1740,7 @@ def colorize_chl_classi(uniform_file, max_file, num_classes, slices_ext=None,
     else:
         slices_ext = np.asarray(slices_ext,dtype='float16')
         
-    print slices_ext    
+    print(slices_ext)    
     
     lowers = slices_ext[:-1]
     uppers = slices_ext[1:]
@@ -1671,9 +1828,9 @@ def geo_colorize_chl_classi(num_classes, chl_file=None, ndvi=False, classic=True
         else:
             out_filename = out_filename            
         rastertools.write_geotiff_with_source(uniform_file, out_im, out_filename)
-        print out_filename
+        print(out_filename)
     except (TypeError, ValueError, AttributeError):
-        print "error processing, check the input files"
+        print("error processing, check the input files")
 
 
 #==============================================================================
@@ -1724,9 +1881,9 @@ def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
         l_value = stats.scoreatpercentile(values, l_bound)
         
     if soil_value>l_value:
-        print ("lower boundary is smaller than soil value, check the image")        
+        print("lower boundary is smaller than soil value, check the image")        
     elif l_value>u_value:
-        print ("lower boundary is larger than upper boundary, check the image")
+        print("lower boundary is larger than upper boundary, check the image")
     else:
         slices = np.empty(num_bins+2,dtype=float)
         slices[0] = soil_value
@@ -1748,10 +1905,10 @@ def percent_plot_old(input_file, bg_value = None, auto_acre=None, l_value=None,
             auto_acre = get_acreage_from_filename(input_file)
         y = y * auto_acre
 
-        print auto_acre, ' / ' ,sum(y[1:-1])
-        print slices
-        print heights
-        print y
+        print(auto_acre, ' / ' ,sum(y[1:-1]))
+        print(slices)
+        print(heights)
+        print(y)
         
         fig = plt.figure()
         ax = plt.gca()
@@ -1961,8 +2118,9 @@ def chl_classi_matlab(chl_file, bkg_thres=0.4, meanYN=True, ndvi=False,
     
 #==============================================================================
 # the gen 15 indices part runs into issues with larger files   
+"""
 def gen_vi_files(filenames, in_dir, unit='ids5', dummy=None, replace=True):
-    """
+    
     simple wrapper for vi_with_geo function to generate
     output filenames, and generate vi images in the output folder.
         
@@ -1977,7 +2135,7 @@ def gen_vi_files(filenames, in_dir, unit='ids5', dummy=None, replace=True):
         DN files, unit='ids5'
         radiance files, unit='rad5'
         reflectanc files, unit='refl5'
-    """
+    
         
     for filename in filenames:
         if (filename.endswith(".tif") and (unit in filename.lower())):
@@ -2001,25 +2159,27 @@ def gen_vi_files(filenames, in_dir, unit='ids5', dummy=None, replace=True):
                 time.sleep(1)
             except ValueError:
                 print("Error generating VIs for %s" % filename)
+"""
 
 
+"""
 def vi_with_geo(image_filename, vi_filename=None, mask_val=-1, save_uint=False):
-    """
-    Takes a registered or registered masked IDS file, reads the data and 
-    geo metadata, cacluates 15 vegetation indices, and writes a new file with
-    the geo metadata.
-    NOTE: the input file has to have 5 bands in the order of nir, red, redge, grn, and blue    
-    Parameters
-    ----------
-    image_filename: str
-        Filename of the IDS image file
-    vi_filename: str (opt)
-        Output filename for the vi file 
-    Returns
-    -------
-    vi_image: 2darray
-        vi image calculated in the program. 
-    """
+
+#    Takes a registered or registered masked IDS file, reads the data and 
+#    geo metadata, cacluates 15 vegetation indices, and writes a new file with
+#    the geo metadata.
+#    NOTE: the input file has to have 5 bands in the order of nir, red, redge, grn, and blue    
+#    Parameters
+#    ----------
+#    image_filename: str
+#        Filename of the IDS image file
+#    vi_filename: str (opt)
+#        Output filename for the vi file 
+#    Returns
+#    -------
+#    vi_image: 2darray
+#        vi image calculated in the program. 
+
 
 
     image = imio.imread(image_filename)
@@ -2040,35 +2200,35 @@ def vi_with_geo(image_filename, vi_filename=None, mask_val=-1, save_uint=False):
     vi_img = np.empty(image.shape[:2]+(15,))
     
     nir = np.ma.masked_equal(nir, 0)
-    print 'NDVI'
+    print('NDVI'
     vi_img[:,:,0] = (nir-red) / (nir+red)
-    print 'EVI'
+    print('EVI')
     vi_img[:,:,1] = 2.5 * (nir-red) / (nir + 6.0*red - 7.5*blu + 1.0)
-    print 'Green CI'
+    print('Green CI')
     vi_img[:,:,2] = (nir / grn) - 1.0
-    print 'Red-edge CI'
+    print('Red-edge CI')
     vi_img[:,:,3] = (nir / redge) - 1.0
-    print 'MCARI'
+    print('MCARI')
     vi_img[:,:,4] = (redge-red - 0.2*(redge - grn)) * (redge / red)
-    print 'TCARI'
+    print('TCARI')
     vi_img[:,:,5] = 3*((redge-red) - 0.2*(redge - grn) * (redge / red))
-    print 'OSAVI'
+    print('OSAVI')
     vi_img[:,:,6] = (1.0+0.16) * (nir-red) / (nir+red+0.16)
-    print 'MCARI/OSAVI'
+    print('MCARI/OSAVI')
     vi_img[:,:,7] = vi_img[:,:,4] / vi_img[:,:,6]
-    print 'TCARI/OSAVI'
+    print('TCARI/OSAVI')
     vi_img[:,:,8] = vi_img[:,:,5] / vi_img[:,:,6]
-    print 'MTCI'
+    print('MTCI')
     vi_img[:,:,9] = (nir-redge) / (redge-red)
     #MTVI2
     #vi_img[:,:,10] = 1.5*(1.2*(nir-grn)-2.5*(red-grn)) / np.sqrt((2.0*nir+1)^2.0 - (6.0*nir) + (5.0*np.sqrt(red)) - 0.5)
     #MCARI/MTVI2
     #vi_img[:,:,11] = vi_img[:,:,4] / vi_img[:,:,10]
-    print 'DCNI'    #!!! we're using 750 nm instead of 720 nm !!!
+    print('DCNI')    #!!! we're using 750 nm instead of 720 nm !!!
     vi_img[:,:,12] = (nir-redge) / (redge - red) / (nir-red+0.03)
-    print 'MTCI/NDVI'
+    print('MTCI/NDVI')
     vi_img[:,:,13] = vi_img[:,:,9] / vi_img[:,:,0]
-    print 'GCI/NDVI'
+    print('GCI/NDVI')
     vi_img[:,:,14] = vi_img[:,:,2] / vi_img[:,:,0]
     
     vi_img[nir.mask] = mask_val
@@ -2078,3 +2238,4 @@ def vi_with_geo(image_filename, vi_filename=None, mask_val=-1, save_uint=False):
             vi_filename, nodata=-1, compress=False)
 
     return vi_img
+"""
