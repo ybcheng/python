@@ -25,6 +25,7 @@ import shapely
 import skimage
 import cv2
 import functools
+import shutil
 import matplotlib.pyplot as plt
 from scipy import stats
 from skimage import filters, morphology, feature
@@ -124,7 +125,7 @@ def rid_fake_y_flip(input_dir, trim_x, trim_y, output_dir,
                         img_file[trim_y:-trim_y, trim_x:-trim_x, 0:2])
         
        
-def flip(input_dir, output_dir, order, ext='.tif'):
+def flip(input_dir, output_dir, ext='.tif', order=[0,1,3,2,4], geo=True):
     """
     This function is designed to simply change band order of IDS images to 
     experiment if it'll make the mosaic better.
@@ -133,15 +134,16 @@ def flip(input_dir, output_dir, order, ext='.tif'):
     ----
     input_dir: str
         directory of input files
+    output_dir: str
+        directory to save output files
     ext: str
         should be '.tif'
     order: 
         where to put old bands in the new file
         e.g. if the first band of the new file is the second band of
-        the old file, then order should be [1, x, x,...]
-        
-    output_dir: str
-        directory to save output files
+        the old file, then order should be [1, x, x,...]        
+    geo: bool
+        whether output files will contain geo-info
     """
     
     
@@ -155,9 +157,21 @@ def flip(input_dir, output_dir, order, ext='.tif'):
         for i in range(len(order)):
             flip_img[:, :, i] = copy.deepcopy(img_file[:, :, order[i]])
         
-        imio.imsave(output_file, flip_img)
+        if not geo:
+            imio.imsave(output_file, flip_img)
+        elif input_dir is not output_dir:
+            rastertools.write_geotiff_with_source(input_file, flip_img, output_file,
+                                                  nodata=0, compress=False)
+        else:
+             shutil.copy(input_file, os.path.abspath(os.path.curdir))
+             temp_file = os.path.abspath(os.path.curdir) + '\\' + os.path.basename(input_file)
+             rastertools.write_geotiff_with_source(temp_file, flip_img, output_file,
+                                                   nodata=0, compress=False)
+             os.remove(temp_file)
+
+        print("processed %s" % input_file)                                     
                         
-                        
+  
 def rid_nan(input_dir, output_dir, ext='.tif'):
     """
     seomtimes images made in ENVI contain NaN because of different reasons
@@ -458,6 +472,33 @@ def proc_sphere(filenames, db_path, DST=True, avg_num=3, trim_x=350, trim_y=250)
         print(np.ma.average(amps[i:i+avg_num]))
             
         
+def smarts_ext(db_path = None):
+    """
+    simple function that reads in output from SMARTS and output irradiance of
+    5cam system bands
+    """
+    
+    
+    if db_path is None:
+        db_path = 'D:/Ceres Imaging/software/SMARTS/SMARTS_295_PC/smarts295.ext.txt'
+    
+    db = pd.read_csv(db_path, header=0, sep=None, engine='python')
+    blu = db['Global_horizn_irradiance'][db.Wvlgth>475][db.Wvlgth<486]
+    grn = db['Global_horizn_irradiance'][db.Wvlgth>545][db.Wvlgth<556]
+    red = db['Global_horizn_irradiance'][db.Wvlgth>665][db.Wvlgth<676]
+    svn = db['Global_horizn_irradiance'][db.Wvlgth>695][db.Wvlgth<706]
+    nir = db['Global_horizn_irradiance'][db.Wvlgth>795][db.Wvlgth<806]
+    
+    print(db_path)
+    print(np.average(nir),",",np.average(red),",",np.average(svn),",",np.average(grn),",",np.average(blu))
+    print()
+    print(np.average(nir))
+    print(np.average(red))
+    print(np.average(svn))
+    print(np.average(grn))
+    print(np.average(blu))
+    
+
 def set_params():
     """
     Definitions of camera parameters related to radiometric calibration.
@@ -511,8 +552,8 @@ def set_params():
              "sn": 4102815409,
              "filter": "nir",
              "int_time": 0.9,
-             "gain": 3.0257E-06, 
-             "offset": 8.8847E-03,
+             "gain": 2.5385E-06, 
+             "offset": 2.0004E-02,
              "adj_coeff": 1.0},
         "404":  #sphere                  
             {"system": "pomona-1",
@@ -544,7 +585,7 @@ def set_params():
              "filter": "blue",
              "int_time": 2.2,
              "gain": 4.7004E-06,
-             "offset": 15717E-02,
+             "offset": 1.5717E-02,
              "adj_coeff": 1.0},     
         #"409":
         #    {"system": "pomona-1",
@@ -753,7 +794,7 @@ def dn_2_refl(dn_filename, refl_filename, rad_filename = None,
     return rad_img, refl_img
 
 
-def dn_2_refl_files(dn_files, rad = False, replace = False, new_order=False,
+def dn_2_refl_files(dn_files, rad = False, replace = False,
                     cam_set = None, irrad = None, int_time = None):                     
     """
     simple wrapper to transfer DN to radiance and reflectance on multiple files
@@ -787,8 +828,6 @@ def dn_2_refl_files(dn_files, rad = False, replace = False, new_order=False,
         simulated irradiance, in the order of band number
     int_time: float array, e.g. [1.1, 1.2, 1.3, 1.4, 1.5]
         use this to overide parameters set in the script
-    new_order: bool
-        band order out of alignMosaicIDS is nir, red, grn, redge, blue
     """
     
     #dn_files = glob.glob(input_dir + '*IDS*' + img_ext) #because we don't process FLIR images
@@ -816,27 +855,21 @@ def dn_2_refl_files(dn_files, rad = False, replace = False, new_order=False,
     if cam_set is None and irrad is None:
         pilot_id = parse.get_flight_from_filename(dn_files[0])        
         try:
-            if new_order is True:
-                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams2.csv',
-                                      header=0, index_col=0, dtype = 'str')
-                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad2.csv',
-                                       header=0, index_col=0)
-            else:
-                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams1.csv',
-                                      header=0, index_col=0, dtype = 'str')
-                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad1.csv',
-                                       header=0, index_col=0)                
+            cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams.csv',
+                                  header=0, index_col=0, dtype = 'str')
+            #irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
+            #                       header=0, index_col=0)
             cam_set = cams_db.loc[pilot_id]
             cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
-            irrad = irrad_db.loc[pilot_id]
-            irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
+            #irrad = irrad_db.loc[pilot_id]
+            #irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
         except KeyError:
             sys.exit("EROOR: check database")
     elif cam_set is None or irrad is None:
         sys.exit("ERROR: either input pilot_id or cam_set & irrad")
     
     cam_set = np.asarray(cam_set)
-    irrad = np.asarray(irrad)
+    #irrad = np.asarray(irrad)
         
     parameters = set_params()
     #cam_set = np.asarray(parameters[system].keys())
@@ -857,20 +890,39 @@ def dn_2_refl_files(dn_files, rad = False, replace = False, new_order=False,
             int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
             #int_time[i] = parameters[system][str(i)]["int_time"]
             
-    print("cam_set = %s" %(cam_set))
-    print("irrad = %s" %(irrad))
-    print("int_time = %s" %(int_time))
+    print("cam_set = %s" % cam_set)
+    #print("irrad = %s" %(irrad))
+    print("int_time = %s" % int_time)
     
     for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
         if os.path.exists(refl) and not replace:
             print("reflectance file exists, skipping %s" % dn)
-        else:
-            #if os.path.exists(refl):
-            #    os.remove(refl)                    
+        elif irrad is not None:
+            irrad = np.asarray(irrad)
+            print("irrad = %s" % irrad)
             try:
                 dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
                           gain=gain, offset=offset, irrad=irrad)
                 print("processed %s" % dn)
+            except ValueError:
+                print("error processing %s" % dn)
+        else:                
+            try:
+                fid = parse.get_fid_from_filename(dn)
+                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
+                                       header=0, index_col=0)
+                irrad = irrad_db.loc[pilot_id]
+                irrad = irrad[irrad.fid == fid]
+                irrad = irrad.iloc[0,2:2+int(irrad.iloc[0,1])]  #irrad.iloc[0] is number of bands
+                irrad = np.asarray(irrad)
+                print("irrad = %s" % irrad)
+            except KeyError:
+                sys.exit("EROOR: check database")
+            try:
+                dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
+                          gain=gain, offset=offset, irrad=irrad)
+                print("processed %s" % dn)
+                irrad = None
             except ValueError:
                 print("error processing %s" % dn)
             
@@ -917,15 +969,17 @@ def dn_2_refl_pilot(filepaths, replace = False):
         else:
             try:
                 pilot_id = parse.get_flight_from_filename(dn)
-                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams1.csv',
+                fid = parse.get_fid_from_filename(dn)
+                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams.csv',
                                       header=0, index_col=0, dtype = 'str')
-                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad1.csv',
-                                       header=0, index_col=0)
                 cam_set = cams_db.loc[pilot_id]
                 cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
                 cam_set = np.asarray(cam_set)
+                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
+                                       header=0, index_col=0)
                 irrad = irrad_db.loc[pilot_id]
-                irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
+                irrad = irrad[irrad.fid == fid]
+                irrad = irrad.iloc[0,2:2+int(irrad.iloc[0,1])]  #irrad.iloc[0] is number of bands
                 irrad = np.asarray(irrad)
         
                 parameters = set_params()
@@ -955,7 +1009,7 @@ refl_watch = wrappers.gen_watcher(dn_2_refl_pilot, wrappers.gen_applier,
 # making histogram like bar chart for reporting
 
 def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
-                  dummy=None, replace=True, new_order=False):
+                  dummy=None, replace=True):
     """
     simple wrapper for chl_with_geo function to generate
     output filenames, and generate chl images in the output folder.
@@ -993,8 +1047,7 @@ def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
                 else:
                     os.remove(chl_filename)
             try:
-                chl_with_geo(filename, chl_filename=chl_filename, scale=scale,
-                             new_order=new_order)
+                chl_with_geo(filename, chl_filename=chl_filename, scale=scale)
                 print("Generated chl for %s" % filename)
                 time.sleep(1)
             except ValueError:
@@ -1002,7 +1055,7 @@ def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
 
 
 def chl_with_geo(image_filename, scale=0.0001, chl_filename=None, mask_val=-1,
-                 save_uint=False, new_order=True):
+                 save_uint=False):
     """
     Takes a registered or registered masked IDS file, reads the data and 
     geo metadata, and writes a new file with chl information and 
@@ -1031,19 +1084,15 @@ def chl_with_geo(image_filename, scale=0.0001, chl_filename=None, mask_val=-1,
     if spectral_axis == 0:
         image = imio.axshuffle(image)
     
-    if new_order is True:   #auto-aligned 5 bands
+    #NIR is alwasy the 1st band, 550 can be 3rd or 4th
+    if image.shape[2] == 4 or image.shape[2] == 5:
+        img_grn = image[:, :, 3].astype('float32') * scale    
+        img_nir = image[:, :, 0].astype('float32') * scale 
+    elif image.shape[2] == 3:
         img_grn = image[:, :, 2].astype('float32') * scale    
-        img_nir = image[:, :, 0].astype('float32') * scale
+        img_nir = image[:, :, 0].astype('float32') * scale  
     else:
-        #NIR is alwasy the 1st band, 550 can be 3rd or 4th
-        if image.shape[2] == 4 or image.shape[2] == 5:
-            img_grn = image[:, :, 3].astype('float32') * scale    
-            img_nir = image[:, :, 0].astype('float32') * scale 
-        elif image.shape[2] == 3:
-            img_grn = image[:, :, 2].astype('float32') * scale    
-            img_nir = image[:, :, 0].astype('float32') * scale  
-        else:
-            raise ValueError("Image dimensions do not appear to be correct.")
+        raise ValueError("Image dimensions do not appear to be correct.")
         
     img_nir = np.ma.masked_equal(img_nir, 0)
     chl_image = (img_nir / img_grn) - 1.0
