@@ -301,6 +301,39 @@ def get_coordinate(pilot_id):
     print ('avg_lat:', np.average([min_lat, max_lat]))
     print ('avg_long:', np.average([min_long, max_long]))
     print ("%.3f, %.3f, %.3f, %.3f" %(min_long, min_lat, max_long, max_lat))
+    
+    
+def get_flight_time(pilot_id, fid):
+    """
+    report start time, end time, and average of the two when a field was flown
+    the function just check the imu file for IDS NIR, it won't work if
+    the imu file's not there
+    
+    Parameters
+    ----------
+    pilot_id: int
+        flight id
+    fid: int or str
+        field id (int) or sub-field id (str)
+    """
+    
+    
+    imu_dir = dirfuncs.get_imu_dir(pilot_id, fid, 'ids_nir')
+    try:
+        imu_path = imu_dir + 'idsNIRImuData.txt'
+        if os.path.exists(imu_path):
+            db = pd.read_csv(imu_path, sep='\t', header=0)
+            a = pd.to_datetime(db.dateTime.min())
+            b = pd.to_datetime(db.dateTime.max())
+            print(fid)
+            print("start time:", a)
+            print("end time:", b)
+            print("avg:", a + (b-a)/2)
+            print()
+        else:
+            print("imu file does not exist")
+    except TypeError:
+        print("error generating imu_path")    
 
 
 #==============================================================================
@@ -472,7 +505,7 @@ def proc_sphere(filenames, db_path, DST=True, avg_num=3, trim_x=350, trim_y=250)
         print(np.ma.average(amps[i:i+avg_num]))
             
         
-def smarts_ext(db_path = None):
+def get_smarts(db_path = None):
     """
     simple function that reads in output from SMARTS and output irradiance of
     5cam system bands
@@ -632,16 +665,16 @@ def set_params():
              "sn": 4102815403,
              "filter": "nir",
              "int_time": 0.6,
-             "gain": 1.0,
-             "offset": 0,
+             "gain": "NaN",
+             "offset": "NaN",
              "adj_coeff": 1.0},
         "401":
             {"system": "lympha-5",
              "sn": 4102815401,
              "filter": "red",
              "int_time": 0.94,
-             "gain": 1.0,
-             "offset": 0,
+             "gain": "NaN",
+             "offset": "NaN",
              "adj_coeff": 1.0},
         "601":
             {"system": "lympha-2",
@@ -696,18 +729,18 @@ def set_params():
              "sn": 4102887610,
              "filter": "nir",
              "int_time": 0.7,
-             "gain": 1.0E-00,
-             "offset": 0,
+             "gain": "NaN",
+             "offset": "NaN",
              "adj_coeff": 1.0},
         "419":
             {"system": "lympha-3",
              "sn": 4102776419,
              "filter": "red",
              "int_time": 1.1,
-             "gain": 1.0E-00,
-             "offset": 0,
+             "gain": "NaN",
+             "offset": "NaN",
              "adj_coeff": 1.0},
-        "899":
+        "899":  #sphere
             {"system": "lympha-6",
              "sn": 4102833899,
              "filter": "nir",
@@ -715,7 +748,7 @@ def set_params():
              "gain": 3.1746E-06,
              "offset": 3.0352E-02,
              "adj_coeff": 1.0},
-        "614":
+        "614":  #sphere
             {"system": "lympha-6",
              "sn": 4102887614,
              "filter": "red",
@@ -830,6 +863,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
         use this to overide parameters set in the script
     """
     
+    out_files = []
     #dn_files = glob.glob(input_dir + '*IDS*' + img_ext) #because we don't process FLIR images
     # generates output filenames
     refl_files = [dn_file.replace('registered masked', 'physical')
@@ -855,8 +889,8 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
     if cam_set is None and irrad is None:
         pilot_id = parse.get_flight_from_filename(dn_files[0])        
         try:
-            cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams.csv',
-                                  header=0, index_col=0, dtype = 'str')
+            cams_path = dirfuncs.guess_db_dir() + "cams.csv"
+            cams_db = pd.read_csv(cams_path, header=0, index_col=0, dtype = 'str')
             #irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
             #                       header=0, index_col=0)
             cam_set = cams_db.loc[pilot_id]
@@ -876,11 +910,15 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
     gain = np.empty(cam_set.shape, dtype='float32')
     offset = np.empty(cam_set.shape, dtype='float32')
     
-    for i in range(len(cam_set)):       
-        gain[i] = parameters["ids"][cam_set[i]]["gain"]
-        offset[i] = parameters["ids"][cam_set[i]]["offset"]
-        #gain[i] = parameters[system][str(i)]["gain"]
-        #offset[i] = parameters[system][str(i)]["offset"]                  
+    for i in range(len(cam_set)):
+        if (parameters["ids"][cam_set[i]]["gain"] is "NaN" or
+            parameters["ids"][cam_set[i]]["offset"] is "NaN"):
+               sys.exit("check database: camera's not calibrated")
+        else:
+           gain[i] = parameters["ids"][cam_set[i]]["gain"]
+           offset[i] = parameters["ids"][cam_set[i]]["offset"]
+           #gain[i] = parameters[system][str(i)]["gain"]
+           #offset[i] = parameters[system][str(i)]["offset"]                   
         
     if int_time is not None:
         int_time = np.asarray(int_time)
@@ -903,28 +941,36 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
             try:
                 dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
                           gain=gain, offset=offset, irrad=irrad)
+                out_files.append(refl)
                 print("processed %s" % dn)
             except ValueError:
                 print("error processing %s" % dn)
         else:                
             try:
                 fid = parse.get_fid_from_filename(dn)
-                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
-                                       header=0, index_col=0)
-                irrad = irrad_db.loc[pilot_id]
-                irrad = irrad[irrad.fid == fid]
-                irrad = irrad.iloc[0,2:2+int(irrad.iloc[0,1])]  #irrad.iloc[0] is number of bands
+                irrad_path = dirfuncs.guess_db_dir() + "irrad.csv"
+                irrad_db = pd.read_csv(irrad_path, header=0, index_col=0)
+                irrad = irrad_db[irrad_db.fid == fid].loc[pilot_id]
+                irrad = irrad.iloc[2:2+int(irrad.iloc[1])]  #irrad.iloc[1] is number of bands
                 irrad = np.asarray(irrad)
-                print("irrad = %s" % irrad)
             except KeyError:
-                sys.exit("EROOR: check database")
+                sys.exit("ERROR: check database")
+            if np.isnan(irrad).any():
+                print("ERROR: check irradiance for %s" % fid)
+                irrad = None
+                continue
+            else:
+                print("irrad = %s" % irrad)
             try:
                 dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
                           gain=gain, offset=offset, irrad=irrad)
                 print("processed %s" % dn)
+                out_files.append(refl)
                 irrad = None
             except ValueError:
                 print("error processing %s" % dn)
+                
+    return out_files
             
                   
 def dn_2_refl_pilot(filepaths, replace = False):                     
@@ -970,18 +1016,20 @@ def dn_2_refl_pilot(filepaths, replace = False):
             try:
                 pilot_id = parse.get_flight_from_filename(dn)
                 fid = parse.get_fid_from_filename(dn)
-                cams_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/cams.csv',
-                                      header=0, index_col=0, dtype = 'str')
+                cams_path = dirfuncs.guess_db_dir() + "cams.csv"
+                cams_db = pd.read_csv(cams_path, header=0, index_col=0, dtype = 'str')
                 cam_set = cams_db.loc[pilot_id]
                 cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
                 cam_set = np.asarray(cam_set)
-                irrad_db = pd.read_csv('C:/Users/Yen-Ben/code/improc/tests/irrad.csv',
-                                       header=0, index_col=0)
-                irrad = irrad_db.loc[pilot_id]
-                irrad = irrad[irrad.fid == fid]
-                irrad = irrad.iloc[0,2:2+int(irrad.iloc[0,1])]  #irrad.iloc[0] is number of bands
+                irrad_path = dirfuncs.guess_db_dir() + "irrad.csv"
+                irrad_db = pd.read_csv(irrad_path, header=0, index_col=0)
+                irrad = irrad_db[irrad_db.fid == fid].loc[pilot_id]
+                irrad = irrad.iloc[2:2+int(irrad.iloc[1])]  #irrad.iloc[1] is number of bands
                 irrad = np.asarray(irrad)
-        
+                if np.isnan(irrad).any():
+                    print("ERROR: check irradiance for %s" % fid)
+                    continue
+                
                 parameters = set_params()
     
                 gain = np.empty(cam_set.shape, dtype='float32')
@@ -989,9 +1037,13 @@ def dn_2_refl_pilot(filepaths, replace = False):
                 int_time = np.empty(cam_set.shape, dtype='float32')
     
                 for i in range(len(cam_set)):       
-                    gain[i] = parameters["ids"][cam_set[i]]["gain"]
-                    offset[i] = parameters["ids"][cam_set[i]]["offset"]
-                    int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
+                    if (parameters["ids"][cam_set[i]]["gain"] is "NaN" or
+                        parameters["ids"][cam_set[i]]["offset"] is "NaN"):
+                            sys.exit("check database: camera's not calibrated")
+                    else:
+                        gain[i] = parameters["ids"][cam_set[i]]["gain"]
+                        offset[i] = parameters["ids"][cam_set[i]]["offset"]
+                        int_time[i] = parameters["ids"][cam_set[i]]["int_time"]
              
                 dn_2_refl(dn, refl, rad_filename=rad, int_time=int_time,
                           gain=gain, offset=offset, irrad=irrad)
@@ -1030,6 +1082,8 @@ def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
         band order out of alignMosaicIDS is nir, red, grn, redge, blue
     """
         
+    out_files = []
+    
     for filename in filenames:
         if (filename.endswith(".tif") and (unit in filename.lower())):
             # generate a good output filename
@@ -1048,10 +1102,13 @@ def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
                     os.remove(chl_filename)
             try:
                 chl_with_geo(filename, chl_filename=chl_filename, scale=scale)
+                out_files.append(chl_filename)
                 print("Generated chl for %s" % filename)
                 time.sleep(1)
             except ValueError:
                 print("Error generating chl for %s" % filename)
+                
+    return out_files
 
 
 def chl_with_geo(image_filename, scale=0.0001, chl_filename=None, mask_val=-1,
