@@ -584,9 +584,9 @@ def set_params():
             {"system": "pomona-1",
              "sn": 4102815409,
              "filter": "nir",
-             "int_time": 0.9,
-             "gain": 2.5385E-06, 
-             "offset": 2.0004E-02,
+             "int_time": 0.6,
+             "gain": 2.5272E-06, 
+             "offset": 2.9711E-02,
              "adj_coeff": 1.0},
         "404":  #sphere                  
             {"system": "pomona-1",
@@ -897,7 +897,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
             cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
             #irrad = irrad_db.loc[pilot_id]
             #irrad = irrad.iloc[1:1+int(irrad.iloc[0])]  #irrad.iloc[0] is number of bands
-        except KeyError:
+        except (OSError, KeyError):
             sys.exit("EROOR: check database")
     elif cam_set is None or irrad is None:
         sys.exit("ERROR: either input pilot_id or cam_set & irrad")
@@ -913,7 +913,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
     for i in range(len(cam_set)):
         if (parameters["ids"][cam_set[i]]["gain"] is "NaN" or
             parameters["ids"][cam_set[i]]["offset"] is "NaN"):
-               sys.exit("check database: camera's not calibrated")
+               sys.exit("ERROR: camera's not calibrated")
         else:
            gain[i] = parameters["ids"][cam_set[i]]["gain"]
            offset[i] = parameters["ids"][cam_set[i]]["offset"]
@@ -944,7 +944,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
                 out_files.append(refl)
                 print("processed %s" % dn)
             except ValueError:
-                print("error processing %s" % dn)
+                print("error processing(1) %s" % dn)
         else:                
             try:
                 fid = parse.get_fid_from_filename(dn)
@@ -952,11 +952,11 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
                 irrad_db = pd.read_csv(irrad_path, header=0, index_col=0)
                 irrad = irrad_db[irrad_db.fid == fid].loc[pilot_id]
                 irrad = irrad.iloc[2:2+int(irrad.iloc[1])]  #irrad.iloc[1] is number of bands
-                irrad = np.asarray(irrad)
+                irrad = np.asarray(irrad, dtype='float32')
             except KeyError:
                 sys.exit("ERROR: check database")
             if np.isnan(irrad).any():
-                print("ERROR: check irradiance for %s" % fid)
+                print("ERROR in irrad, skipping %s" % dn)
                 irrad = None
                 continue
             else:
@@ -968,7 +968,7 @@ def dn_2_refl_files(dn_files, rad = False, replace = False,
                 out_files.append(refl)
                 irrad = None
             except ValueError:
-                print("error processing %s" % dn)
+                print("error processing(2) %s" % dn)
                 
     return out_files
             
@@ -1009,25 +1009,26 @@ def dn_2_refl_pilot(filepaths, replace = False):
                   for refl_file in refl_files]  
     rad_files = ['None' for refl_file in refl_files]
     
+    cams_path = dirfuncs.guess_db_dir() + "cams.csv"
+    cams_db = pd.read_csv(cams_path, header=0, index_col=0, dtype = 'str')
+    irrad_path = dirfuncs.guess_db_dir() + "irrad.csv"
+    irrad_db = pd.read_csv(irrad_path, header=0, index_col=0)
+            
     for (dn, rad, refl) in zip(dn_files, rad_files, refl_files):
         if os.path.exists(refl) and not replace:
             print("reflectance file exists, skipping %s" % dn)
         else:
             try:
                 pilot_id = parse.get_flight_from_filename(dn)
-                fid = parse.get_fid_from_filename(dn)
-                cams_path = dirfuncs.guess_db_dir() + "cams.csv"
-                cams_db = pd.read_csv(cams_path, header=0, index_col=0, dtype = 'str')
+                fid = parse.get_fid_from_filename(dn)                
                 cam_set = cams_db.loc[pilot_id]
                 cam_set = cam_set.iloc[1:1+int(cam_set.iloc[0])]  #cam_set.iloc[0] is number of bands
-                cam_set = np.asarray(cam_set)
-                irrad_path = dirfuncs.guess_db_dir() + "irrad.csv"
-                irrad_db = pd.read_csv(irrad_path, header=0, index_col=0)
+                cam_set = np.asarray(cam_set)                
                 irrad = irrad_db[irrad_db.fid == fid].loc[pilot_id]
                 irrad = irrad.iloc[2:2+int(irrad.iloc[1])]  #irrad.iloc[1] is number of bands
-                irrad = np.asarray(irrad)
+                irrad = np.asarray(irrad, dtype='float32')
                 if np.isnan(irrad).any():
-                    print("ERROR: check irradiance for %s" % fid)
+                    print("error in irrad, skipping %s" % dn)
                     continue
                 
                 parameters = set_params()
@@ -1039,7 +1040,7 @@ def dn_2_refl_pilot(filepaths, replace = False):
                 for i in range(len(cam_set)):       
                     if (parameters["ids"][cam_set[i]]["gain"] is "NaN" or
                         parameters["ids"][cam_set[i]]["offset"] is "NaN"):
-                            sys.exit("check database: camera's not calibrated")
+                            sys.exit("ERROR: camera's not calibrated")
                     else:
                         gain[i] = parameters["ids"][cam_set[i]]["gain"]
                         offset[i] = parameters["ids"][cam_set[i]]["offset"]
@@ -1060,7 +1061,7 @@ refl_watch = wrappers.gen_watcher(dn_2_refl_pilot, wrappers.gen_applier,
 # this section is about chl index calculation and a little post processing
 # making histogram like bar chart for reporting
 
-def gen_chl_files(filenames, in_dir, unit='ids', scale = 0.0001,
+def gen_chl_files(filenames, in_dir='physical', unit='ids', scale = 0.0001,
                   dummy=None, replace=True):
     """
     simple wrapper for chl_with_geo function to generate
