@@ -540,45 +540,45 @@ def set_params():
     """
 
     ids = {
-        "611":
+        "611":  #sphere
             {"system": "pomona-2",
              "sn": 4102887611,
              "filter": "nir",
-             "int_time": 0.8,
-             "gain": 3.00036E-06,
-             "offset": 0,
+             "int_time": 0.6,       #0.8,
+             "gain": 2.9347E-06,    #2.00036E-06,
+             "offset": 3.5463E-02,
              "adj_coeff": 1.0}, # the adjustment coeeficient is to make our reflectance      
-        "612":                  # look like known reference, e.g. AVIRIS, but not being used right now
+        "612":  #sphere         # look like known reference, e.g. AVIRIS, but not being used right now
             {"system": "pomona-2",
              "sn": 4102887612,
              "filter": "red",
-             "int_time": 1.3,
-             "gain": 3.4203E-06,
-             "offset": 0,
+             "int_time": 1.2,       #1.3,
+             "gain": 2.9216E-06,    #3.4203E-06,
+             "offset": 1.6753E-02,
              "adj_coeff": 1.0},
-        "421":
+        "421":  #sphere
             {"system": "pomona-2",
              "sn": 4102776421,
              "filter": "red_edge",
-             "int_time": 1.3,
-             "gain": 3.41967E-06,
-             "offset": 0,
+             "int_time": 1.2,       #1.3,
+             "gain": 2.8413E-06,    #3.41967E-06,
+             "offset": 1.6491E-02,
              "adj_coeff": 1.0},
-        "902":
+        "902":  #sphere
             {"system": "pomona-2",
              "sn": 4102833902,
              "filter": "green",
-             "int_time": 1.9,
-             "gain": 2.8315E-06,
-             "offset": 0,
+             "int_time": 1.6,       #1.9,
+             "gain": 3.7925E-06,    #2.8315E-06,
+             "offset": 1.7005E-02,
              "adj_coeff": 1.0},
-        "635":
+        "635":  #sphere
             {"system": "pomona-2",
              "sn": 4102719635,
              "filter": "blue",
              "int_time": 2.2,
-             "gain": 4.25458E-06,
-             "offset": 0,
+             "gain": 4.6463E-06,    #4.25458E-06,
+             "offset": 1.5855E-02,
              "adj_coeff": 1.0},
         "409":  #sphere w new lens and filter
             {"system": "pomona-1",
