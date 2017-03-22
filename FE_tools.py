@@ -16,6 +16,7 @@ import time
 import copy
 import fiona
 import shapely
+import rasterio
 import skimage
 import cv2
 import functools
@@ -24,12 +25,12 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from skimage import filters, morphology, feature
 
-from ..imops import imio, imcalcs
-from ..gis import rastertools, shapetools, extract
-from ..gen import strops, dirfuncs, wrappers
-from ..cv import classify, slicing
-from ..dbops import finder, loader, parse
-from . import anisodiff2y3d
+from improc.imops import imio, imcalcs
+from improc.gis import rastertools, shapetools, extract, mask
+from improc.gen import strops, dirfuncs, wrappers
+from improc.cv import classify, slicing
+from improc.dbops import finder, loader, parse
+#from . import anisodiff2y3d
 
 
 def stack_OLI(basedir):
@@ -66,3 +67,28 @@ def stack_OLI(basedir):
                                               nodata=0, compress=False)
                                               
         print('processed: %s' % b)
+        
+        
+def extract_average(filepaths, shapefile):
+    """
+    little utility that extracts and reports average raster values
+    within a polygon shapefile
+    ONLY works for single-band images
+    
+    Parameters
+    ----------
+    filepaths: list
+        files to be processed
+    shapefile: str
+        polygon shapefile
+    """
+    
+    for f in filepaths:
+        raster = rasterio.open(f)
+        polygon = shapetools.join_layers(shapefile)
+        shapes = [shapely.geometry.mapping(polygon)]
+        masked, geo_affine = mask.mask(raster, shapes, crop=True)
+        if masked.shape[0] != 1 and masked.shape[1] != 1 and masked.shape[2] != 1:
+            print('check image dimension: %s' % f)
+        else:
+            print(np.average(masked))
