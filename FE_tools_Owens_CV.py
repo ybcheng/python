@@ -5,22 +5,25 @@ Created on Wed Mar  1 13:49:10 2017
 @author: ybcheng
 """
 
-import glob
+#import glob
 import os
-import sys
-import pandas as pd
+#import sys
+#import pandas as pd
 import numpy as np
 import scipy
+#import rastertools
+import rasterio
 import time
-import copy
-import fiona
-import shapely
+#import copy
+#import fiona
+#import shapely
 import skimage
-import cv2
-import functools
-import shutil
-import matplotlib.pyplot as plt
-import improc
+#import cv2
+#import functools
+#import shutil
+#import matplotlib.pyplot as plt
+#import improc
+import anisodiff2y3d
 
 from scipy import stats
 from skimage import filters, morphology, feature
@@ -34,109 +37,115 @@ from skimage import filters, morphology, feature
 #from improc.cv.genutils import square, disk
 
 
-def gen_compliance_files(stats_files, replace=True):
+def img_read(filename):
     """
-    simple wrapper of calc_complinace and generates output_files
+    generic function to read in image files and 
+    store as numpy array
     
-    Parameters
-    ----------
-    files: list
-        list of full path of files to be processed
+    NOTE: currently ONLY support tif format
     """
     
-    for sf in stats_files:
-        if not ('stats.txt' in sf):
-            print("check filename for %s" %(sf))
-            continue        
+    ext = os.path.splitext(filename)[-1] 
+    if ext == ".tif" or ext == ".tiff" or ext == ".TIF":
+        #try:
+        image = rasterio.open(filename).read()
         
-        report_filename = sf.replace('stats.txt', 'report.csv')
-        if os.path.exists(report_filename):
-                if not replace:
-                    print("%s already exists" %(report_filename))
-                    continue
-                else:
-                    os.remove(report_filename)        
-        
-        try:
-            avg_CE, avg_cover, std_cover, out_DF = calc_compliance(sf)
-        except KeyError:
-            print("Error generating report for %s" %(sf))
-            continue
-        
-        log = open(report_filename, 'w')
-        log.write("Average CE = %s\n" %(avg_CE))
-        log.write("Average cover = %s\n" %(avg_cover))
-        log.write("SD cover = %s\n" %(std_cover))
-        log.close()
-                        
-        with open(report_filename, 'a') as rf:
-            pd.DataFrame.to_csv(out_DF, rf)
-            
-        print("Generated report for %s" %(sf))
+        #this part is to make sure im in [X, Y, Z] order            
+        if len(image.shape) == 3:
+            shuffled_image = np.swapaxes(np.swapaxes(image, 0, 1), 1, 2)
+            if shuffled_image.shape[2] == 1:
+                shuffled_image = shuffled_image[:, :, 0]
+    else:
+        print("File format is not currently supported.")
+        return
 
+    return shuffled_image
+    
 
-def calc_compliance(file):
+def write_geotiff_w_source(source_filename, output_img, output_filename,
+                              nodata=0, compress=True, extra_tags=None):
     """
-    calculate compliance report
+    Uses the info in the input file (source, in geotiff format) to
+    write a new geotiff (output) with the results after some processing
+    that's been done to the input file, but otherwise the same geo information.
     
-    Parameters
-    ----------
-    file: str
-        full path of output file from zonal stats
-        the file needs to have 'MEAN' column as coverage
-        and 'Shape_Area' as area of each polgon cell
+    Note: surpports GeoTIFF format as indicated
     """
-    
-    stats_DF = pd.read_csv(file, sep=',')
-    
-    stats_DF['cover_class'] = np.floor_divide(stats_DF['MEAN'],5)*5 + 2.5
-    stats_DF['CE'] = 100*(1-np.exp((-0.41865) * np.floor(stats_DF['MEAN'])))
-    stats_DF['cover_area'] = stats_DF['MEAN'] * stats_DF['Shape_Area']
-    
-    avg_CE = np.nanmean(stats_DF['CE'])
-    avg_cover = np.sum(stats_DF['cover_area']) / np.sum(stats_DF['Shape_Area'])
-    std_cover = np.nanstd(stats_DF['MEAN'], ddof=1)
-    
-    o1 = stats_DF.groupby('cover_class')['cover_class'].count()
-    o2 = stats_DF.groupby('cover_class')['Shape_Area'].sum()
 
-    out_DF = pd.Series.to_frame(o1)
-    out_DF.columns = ['Count of Class']
-    out_DF['Sum of Area'] = o2
-    out_DF.loc['Grand_Total'] = [np.sum(o1), np.sum(o2)]
+    try:
+        source = rasterio.open(source_filename, "r")
+    except IOError:
+        print("Error opening file %s. Returning." % source_filename)
+        return
+    
+    if output_img.ndim == 2:
+        rev_output_img = np.ma.resize(output_img, output_img.shape + (1,))
+    else:
+        rev_output_img = output_img    
+    
+    if compress:
+        compress = "lzw"
+    else:
+        compress = None
 
-    return avg_CE, avg_cover, std_cover, out_DF
+    out_raster = rasterio.open(output_filename, "w", driver="GTiff",
+            width=rev_output_img.shape[1], height=rev_output_img.shape[0],
+            count=rev_output_img.shape[2], dtype=rev_output_img.dtype,
+            transform=source.affine, crs=source.crs, nodata=nodata,
+            compress=compress)
+
+    for i in range(rev_output_img.shape[2]):
+        out_raster.write_band(i + 1, rev_output_img[:, :, i])
+
+    if extra_tags is not None:
+        out_raster.update_tags(**extra_tags)
+
+    source.close()
+    out_raster.close()
 
 
-def classi_loc_max(img_filepath, bg_thres, out_filepath):
+def classi_loc_max(img_filepath, bg_thres, out_filepath, min_distance=3,
+                   output_cov=True):
     """
     adaptive threshold & watershed segmentation based procedure
     """
         
-    img = improc.imops.imio.imread(img_filepath)
+    #img = improc.imops.imio.imread(img_filepath)
+    img = img_read(img_filepath)
     img = np.ma.masked_less_equal(img, bg_thres)
     img[img.mask] = 0.0
     
     bw = skimage.filters.threshold_adaptive(img, 11)
     distance = scipy.ndimage.distance_transform_edt(bw)
     loc_max = skimage.feature.peak_local_max(distance, indices=False, 
-                                             min_distance=13, labels=bw)
+                                             min_distance=min_distance,
+                                             labels=bw)
     markers = scipy.ndimage.label(loc_max)[0]
     labels = skimage.morphology.watershed(-distance, markers, mask=bw)
         
-    improc.gis.rastertools.write_geotiff_with_source(img_filepath, labels,
-                                                     out_filepath)
+    if output_cov:
+        labels[labels > 0] = 1.
+        labels[labels <= 0] = 0.
+        labels = labels.astype('float32')
+    
+    write_geotiff_w_source(img_filepath, labels, out_filepath)
     
     
 def distance_map(img_filepath, bg_thres, cov_filepath, seg_filepath=None,
-                 bg_value=-1, radius=1, use_adaptive=True):
+                 bg_value=-1, radius=1, use_adaptive=True, use_gaussian=False):
     """
     distance map based procedure
     """
     
-    img = improc.imops.imio.imread(img_filepath)    
+    start_time = time.time()
+    
+    img = img_read(img_filepath)    
     #bg_thres = 0.38
     #bg_value = -1
+    
+    if use_gaussian:
+        img = filters.gaussian_filter(img, sigma=3)    
+    
     img = np.ma.masked_less_equal(img, bg_thres)    
     
     if use_adaptive:
@@ -151,7 +160,8 @@ def distance_map(img_filepath, bg_thres, cov_filepath, seg_filepath=None,
     #exp_sq = np.ones((width, width), dtype=np.unit8)
     #exp_sq = improc.cv.genutils.square(2 * radius + 1)
     exp_dsk = skimage.morphology.disk(radius)
-        
+    #exp_dsk = skimage.morphology.ball(radius)[:,:,0] 
+    
     #seg_img = scipy.ndimage.grey_dilation(ndsi_img_mskd, footprint=exp_sq)
     seg_img = scipy.ndimage.grey_dilation(img, footprint=exp_dsk)
     cov_img = np.empty(seg_img.shape, 'uint8')
@@ -160,7 +170,16 @@ def distance_map(img_filepath, bg_thres, cov_filepath, seg_filepath=None,
     cov_img[~seg_img.mask] = 1
     
     if seg_filepath is not None:
-        improc.gis.rastertools.write_geotiff_with_source(img_filepath, seg_img,
-                                                         seg_filepath)
-    improc.gis.rastertools.write_geotiff_with_source(img_filepath, cov_img,
-                                                     cov_filepath)
+        write_geotiff_w_source(img_filepath, seg_img, seg_filepath)
+    write_geotiff_w_source(img_filepath, cov_img, cov_filepath)
+    
+    log_filepath = cov_filepath.replace(os.path.splitext(cov_filepath)[1], '.log')
+    log = open(log_filepath, 'w')
+    log.write(" input_file:%s\n" %(img_filepath))
+    log.write(" background_threshold=%s\n" %(bg_thres))
+    log.write(" radius=%s\n" %(radius))
+    log.write(" use_adaptive:%s\n" %(use_adaptive))
+    log.write(" %s seconds" %(time.time() - start_time))    
+    log.close()
+    
+    print("--- %.2f seconds ---" % (time.time() - start_time))
