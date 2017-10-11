@@ -34,7 +34,19 @@ from skimage import filters, morphology, feature
 #from improc.cv.genutils import square, disk
 
 
-def sep_zonal_stat_files(file, out_dir, out_suffix='.csv'):
+def sep_zonal_stat_files(files):
+    """
+    simple warpper for sep_zonal_file
+    """
+    
+    for f in files:
+        print('processing: ' + f)        
+        sep_zonal_stat_file(f)
+
+    print('done')
+    
+
+def sep_zonal_stat_file(file, out_dir=None, out_suffix=None):
     """
     seperate zonal stats file for each DCA
     
@@ -42,26 +54,49 @@ def sep_zonal_stat_files(file, out_dir, out_suffix='.csv'):
     ----------
     file: string
         full path of zonal stats file
-        e.g. J:\Owens_Lake\tasks\comp-mon\Veg\2016\Analysis\2016_Ph7a_compliance\ALL_1_stats.csv
+        e.g. J:/Owens_Lake/tasks/comp-mon/Veg/2017/analysis/20170623_ph7a_compliance/ALL_1_stats.csv
     out_dir: string
         full path of where the output files should be stored
-        e.g. J:\Owens_Lake\tasks\comp-mon\Veg\2016\Analysis\2016_Ph7a_compliance\
+        DEFAULT to the same directory as in the input files
+        e.g. J:/Owens_Lake/tasks/comp-mon/Veg/2017/analysis/20170623_ph7a_compliance/
         see how zonal stats for each DCA were separated
+        
+    EXAMPLE use something like below in the console:
+    files = glob.glob('J:/Owens_Lake/tasks/comp-mon/Veg/2017/analysis/20170623_ph7a_compliance/temp/ALL*csv')
+    for f in files:
+        FE_tools_Owens_comp.sep_zonal_stat_files(f)
     """
     
     DCAs = ['ChN', 'T1A-2','ChS','T28NS','T37-2','T32-1','T36-1w','T36-1e','T30-1','T5-1_Addition']
     zonal_DF = pd.read_csv(file)
     
+    if out_dir is None:
+        out_dir = os.path.dirname(file) + '/'
+        
     for d in DCAs:
         stats_DF = zonal_DF.loc[zonal_DF.StdPolygon == d]
-        out_filename = out_dir + d + out_suffix
-        stats_DF.to_csv(out_filename, index=False, sep=',')    
+        if not stats_DF.empty:
+            if out_suffix is None:
+                out_filename = out_dir + os.path.basename(file).replace('ALL', d)
+            else:
+                out_filename = out_dir + d + out_suffix
+            stats_DF.to_csv(out_filename, index=False, sep=',')    
 
 
-def gen_compliance_files_v2(stats_files, report_filename, replace=True):
+def gen_compliance_files_v2(stats_files, report_filename=None, replace=True):
     """
     simple wrapper for calc_compliance_v2
     """
+    
+    if report_filename is None:
+        report_filename = os.path.dirname(stats_files[0]) + '/report.csv'
+        
+    if os.path.exists(report_filename):
+        if replace:
+           os.remove(report_filename)
+        else:           
+           print("%s already exists, quitting..." %(report_filename))
+           return
     
     log = open(report_filename, 'w')
      
@@ -76,17 +111,27 @@ def gen_compliance_files_v2(stats_files, report_filename, replace=True):
 
 def calc_compliance_v2(file):
     """
+    updated function to calculate compliance for Owen's MV areas
+    based on areas over 5%, 10%, 20% coverage
+    
+    Parameters
+    ----------
+    file: str
+        full path of output file from zonal stats
+        the file needs to have 'MEAN' column as coverage
+        e.g. J:\Owens_Lake\tasks\comp-mon\Veg\2016\Analysis\2016_Ph7a_compliance\ChS_1_stats.csv
     """
     
     stats_DF = pd.read_csv(file, sep=',')
-    stats_DF = stats_DF.iloc[:,2:]
+    #stats_DF = stats_DF.iloc[:,2:]  #dropping first column since it's empty, check input files for compatibility
+    stats_DF['MEAN'] = pd.to_numeric(stats_DF['MEAN'], errors='coerce')    
     stats_DF = stats_DF.dropna()
     
     total_cells = len(stats_DF['MEAN'])
     
-    DF_five = stats_DF.loc[stats_DF.MEAN > 5]
-    DF_ten = stats_DF.loc[stats_DF.MEAN > 10]
-    DF_twenty = stats_DF.loc[stats_DF.MEAN > 20]
+    DF_five = stats_DF.loc[stats_DF.MEAN > 0.05]
+    DF_ten = stats_DF.loc[stats_DF.MEAN > 0.10]
+    DF_twenty = stats_DF.loc[stats_DF.MEAN > 0.20]
     
     count_five = len(DF_five['MEAN'])
     count_ten = len(DF_ten['MEAN'])
@@ -185,60 +230,3 @@ def calc_compliance(file):
 
     return avg_CE, avg_cover, std_cover, out_DF
 
-
-def classi_loc_max(img_filepath, bg_thres, out_filepath):
-    """
-    adaptive threshold & watershed segmentation based procedure
-    """
-        
-    img = improc.imops.imio.imread(img_filepath)
-    img = np.ma.masked_less_equal(img, bg_thres)
-    img[img.mask] = 0.0
-    
-    bw = skimage.filters.threshold_adaptive(img, 11)
-    distance = scipy.ndimage.distance_transform_edt(bw)
-    loc_max = skimage.feature.peak_local_max(distance, indices=False, 
-                                             min_distance=13, labels=bw)
-    markers = scipy.ndimage.label(loc_max)[0]
-    labels = skimage.morphology.watershed(-distance, markers, mask=bw)
-        
-    improc.gis.rastertools.write_geotiff_with_source(img_filepath, labels,
-                                                     out_filepath)
-    
-    
-def distance_map(img_filepath, bg_thres, cov_filepath, seg_filepath=None,
-                 bg_value=-1, radius=1, use_adaptive=True):
-    """
-    distance map based procedure
-    """
-    
-    img = improc.imops.imio.imread(img_filepath)    
-    #bg_thres = 0.38
-    #bg_value = -1
-    img = np.ma.masked_less_equal(img, bg_thres)    
-    
-    if use_adaptive:
-        bw = skimage.filters.threshold_adaptive(img, 11)
-        bw[img.mask] = False
-        img[~bw] = bg_value
-    else:
-        img[img.mask] = bg_value
-     
-    #radius = 1
-    #width = 2 * radius + 1
-    #exp_sq = np.ones((width, width), dtype=np.unit8)
-    #exp_sq = improc.cv.genutils.square(2 * radius + 1)
-    exp_dsk = skimage.morphology.disk(radius)
-        
-    #seg_img = scipy.ndimage.grey_dilation(ndsi_img_mskd, footprint=exp_sq)
-    seg_img = scipy.ndimage.grey_dilation(img, footprint=exp_dsk)
-    cov_img = np.empty(seg_img.shape, 'uint8')
-    seg_img = np.ma.masked_equal(seg_img, -1.0)
-    cov_img[seg_img.mask] = 0
-    cov_img[~seg_img.mask] = 1
-    
-    if seg_filepath is not None:
-        improc.gis.rastertools.write_geotiff_with_source(img_filepath, seg_img,
-                                                         seg_filepath)
-    improc.gis.rastertools.write_geotiff_with_source(img_filepath, cov_img,
-                                                     cov_filepath)

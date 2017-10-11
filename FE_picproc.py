@@ -86,7 +86,7 @@ def copy_mosaic(mosaic_dir, output_dir, file_pattern='IID201703*.jpg'):
     print('skipped total of %i files' % s)
 
 
-def rot_mosaic(source_dir, output_dir, file_pattern='IID201703*.jpg',
+def rot_mosaic(source_dir, output_dir, file_pattern='IID201710*.jpg',
                k=1, replace=False):
     """
     may be a handy little tool that rotates soil core mosaic in "final" folder

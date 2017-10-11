@@ -18,11 +18,11 @@ import time
 #import fiona
 #import shapely
 import skimage
-#import cv2
+import cv2
 #import functools
 #import shutil
 #import matplotlib.pyplot as plt
-#import improc
+import improc
 import anisodiff2y3d
 
 from scipy import stats
@@ -104,6 +104,50 @@ def write_geotiff_w_source(source_filename, output_img, output_filename,
     out_raster.close()
 
 
+def testing_classi_loc_max(img_filepath, bg_thres, out_filepath=None, min_distance=3,
+                      use_otsu=True, use_adapt=False, output_cov=True):
+    """
+    adaptive threshold & watershed segmentation based procedure
+    """
+    
+    start_time = time.time()
+    print('processing: ' + img_filepath)
+
+    if out_filepath is None:
+        out_filepath = os.path.splitext(img_filepath)[0] + '_loc_cov.tif'
+
+    img = improc.imops.imio.imread(img_filepath)
+    img = img_read(img_filepath)
+   
+    #img = np.ma.masked_less_equal(img, bg_thres)
+    #img[img.mask] = 0.0
+    
+    if use_adapt:
+        bw = skimage.filters.threshold_adaptive(img, 1111)
+    elif use_otsu:
+        otsu_val = skimage.filters.threshold_otsu(img)
+        bw = img > otsu_val
+    else:
+        bw = img > bg_thres            
+    
+    distance = scipy.ndimage.distance_transform_edt(bw)
+    loc_max = skimage.feature.peak_local_max(distance, indices=False, 
+                                             min_distance=min_distance,
+                                             labels=bw)
+    markers = scipy.ndimage.label(loc_max)[0]
+    labels = skimage.morphology.watershed(-distance, markers, mask=bw)
+        
+    if output_cov:
+        labels[labels > 0] = 1.
+        labels[labels <= 0] = 0.
+        labels = labels.astype('float32')
+    
+    write_geotiff_w_source(img_filepath, labels, out_filepath)
+    
+    print("generated: " + out_filepath)    
+    print("in --- %.2f seconds ---" % (time.time() - start_time))
+    
+    
 def classi_loc_max(img_filepath, bg_thres, out_filepath, min_distance=3,
                    output_cov=True):
     """
@@ -131,8 +175,78 @@ def classi_loc_max(img_filepath, bg_thres, out_filepath, min_distance=3,
     write_geotiff_w_source(img_filepath, labels, out_filepath)
     
     
+def testing_distance_map(img_filepath, bg_thres, cov_filepath=None, seg_filepath=None,
+                 bg_value=-1, radius=1, use_adapt=False, use_otsu=True,
+                 use_gaussian=False):
+    """
+    distance map based procedure
+    """
+    
+    start_time = time.time()
+    print('processing: ' + img_filepath)
+        
+    if not os.path.exists(img_filepath):
+        print("ERROR: check input file path")
+        return
+    
+    if cov_filepath is None:
+        cov_filepath = os.path.splitext(img_filepath)[0] + '_dis_cov.tif'
+    
+    img = improc.imops.imio.imread(img_filepath)
+    
+    #img = img_read(img_filepath)    
+    #bg_thres = 0.38
+    #bg_value = -1
+    
+    if use_gaussian:
+        img = filters.gaussian_filter(img, sigma=3)    
+    
+    #img = np.ma.masked_less_equal(img, bg_thres)    
+    
+    if use_adapt:
+        bw = skimage.filters.threshold_adaptive(img, 1111)        
+    elif use_otsu:
+        otsu_val = skimage.filters.threshold_otsu(img)
+        print(otsu_val)
+        bw = img > otsu_val
+    else:
+        bw = img > bg_thres 
+     
+    img[~bw] = bg_value
+        
+    #radius = 1
+    #width = 2 * radius + 1
+    #exp_sq = np.ones((width, width), dtype=np.unit8)
+    #exp_sq = improc.cv.genutils.square(2 * radius + 1)
+    exp_dsk = skimage.morphology.disk(radius)
+    #exp_dsk = skimage.morphology.ball(radius)[:,:,0] 
+    
+    #seg_img = scipy.ndimage.grey_dilation(ndsi_img_mskd, footprint=exp_sq)
+    seg_img = scipy.ndimage.grey_dilation(img, footprint=exp_dsk)
+    cov_img = np.empty(seg_img.shape, 'uint8')
+    seg_img = np.ma.masked_equal(seg_img, -1.0)
+    cov_img[seg_img.mask] = 0
+    cov_img[~seg_img.mask] = 1
+    
+    if seg_filepath is not None:
+        write_geotiff_w_source(img_filepath, seg_img, seg_filepath)
+    write_geotiff_w_source(img_filepath, cov_img, cov_filepath)
+    
+    #log_filepath = cov_filepath.replace(os.path.splitext(cov_filepath)[1], '.log')
+    #log = open(log_filepath, 'w')
+    #log.write(" input_file:%s\n" %(img_filepath))
+    #log.write(" background_threshold=%s\n" %(bg_thres))
+    #log.write(" radius=%s\n" %(radius))
+    #log.write(" use_adaptive:%s\n" %(use_adaptive))
+    #log.write(" %s seconds" %(time.time() - start_time))    
+    #log.close()
+    
+    print("generated: " + cov_filepath)
+    print("--- %.2f seconds ---" % (time.time() - start_time))
+    
+    
 def distance_map(img_filepath, bg_thres, cov_filepath, seg_filepath=None,
-                 bg_value=-1, radius=1, use_adaptive=True, use_gaussian=False):
+                 bg_value=-1, radius=1, use_adaptive=False, use_gaussian=False):
     """
     distance map based procedure
     """
