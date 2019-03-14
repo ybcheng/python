@@ -49,7 +49,7 @@ def ren_mosaic(mosaic_dir, file_pattern='*stitch.jpg'):
     print('skipped total of %i files' % s)    
 
 
-def copy_mosaic(mosaic_dir, output_dir, file_pattern='IID201703*.jpg'):
+def copy_mosaic(mosaic_dir, output_dir, file_pattern='IID201802*jpg', replace=False):
     """
     may be a handy little tool that copies soil core mosaic to "final" folder
     the program searches all the stitched photos in a dir and sub-dir
@@ -72,17 +72,23 @@ def copy_mosaic(mosaic_dir, output_dir, file_pattern='IID201703*.jpg'):
             
     c = 0
     s = 0
+    r = 0
     for m in mosaics:
         f = output_dir + os.path.basename(m)
         if not os.path.exists(f):
             copyfile(m, f)
             print('copied: %s' % f)
             c+=1
+        elif replace:
+            copyfile(m, f)
+            print('replaced: %s' % f)
+            r+=1
         else:
             print('skipped: %s' % f)
             s+=1
             
     print('copied total of %i files' % c)
+    print('replaced total of %i files' % r)
     print('skipped total of %i files' % s)
 
 
@@ -122,15 +128,18 @@ def rot_mosaic(source_dir, output_dir, file_pattern='IID201710*.jpg',
             img = np.rot90(img, k=k)            
             improc.imops.imio.imsave(f, img)
             print('generated: %s' % f)
+            print('')
             g+=1
         elif replace:
             img = improc.imops.imio.imread(m)
             img = np.rot90(img, k=k)
             improc.imops.imio.imsave(f, img)
             print('replaced: %s' % f)
+            print('')
             r+=1
         else:
             print('skipping: %s' % m)
+            print('')
             s+=1
 
     print('generated total of %i files' % g)

@@ -67,7 +67,7 @@ def sep_zonal_stat_file(file, out_dir=None, out_suffix=None):
         FE_tools_Owens_comp.sep_zonal_stat_files(f)
     """
     
-    DCAs = ['ChN', 'T1A-2','ChS','T28NS','T37-2','T32-1','T36-1w','T36-1e','T30-1','T5-1_Addition']
+    DCAs = ['ChN', 'T01A-2','ChS','T28','T37-2','T32-1','T36-1W','T36-1E','T30-1','T5-1_Addition']
     zonal_DF = pd.read_csv(file)
     
     if out_dir is None:

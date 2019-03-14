@@ -135,7 +135,7 @@ def vi_calc(img_filepath, output = True, out_filepath=None,
     
     
 def classi_loc_max(img_filepath, bg_thres, out_filepath=None, bg_value=-1.,
-                   img_enh=False, use_otsu=False, use_adapt=True,                    
+                   img_enh=False, use_otsu=False, use_adapt=False,                    
                    min_distance=2, output_lab=False, output_bw=False,
                    rmv_sm_holes=False, output_cov=True):
     """
@@ -175,7 +175,8 @@ def classi_loc_max(img_filepath, bg_thres, out_filepath=None, bg_value=-1.,
     print('processing: ' + img_filepath)
     
     # deal with input data first
-    if 'ndvi' in img_filepath:
+    if ('ndvi' in img_filepath or 'NDVI' in img_filepath or
+        'ndsi' in img_filepath or 'NDSI' in img_filepath):
         img = improc.imops.imio.imread(img_filepath)
     else:
         rgb = improc.imops.imio.imread(img_filepath)
@@ -231,13 +232,14 @@ def classi_loc_max(img_filepath, bg_thres, out_filepath=None, bg_value=-1.,
     elif use_adapt:   #use adaptive threshold
         img = np.ma.masked_less_equal(img, bg_thres)
         img[img.mask] = bg_value       
-        bw = skimage.filters.threshold_adaptive(img, 11)
+        bw = skimage.filters.threshold_adaptive(img, 77)
     else:   #use global threshold
         bw = img > bg_thres
         
     #remove really bright pixels, likely bright sand
     #but requires rgb imagery to do it
-    if not ('ndvi' in img_filepath):    
+    if not ('ndvi' in img_filepath or 'ndsi' in img_filepath or
+            'NDVI' in img_filepath or 'NDSI' in img_filepath):    
         #refl_roof = np.average(rgb_sum) - 0.1*np.std(rgb_sum)
         refl_roof = np.max(rgb_sum) - 1.25*np.std(rgb_sum)
         rgb_sum = np.ma.masked_greater(rgb_sum, refl_roof)

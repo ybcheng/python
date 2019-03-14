@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Aug  9 11:23:05 2017
+Created on Sun Sep 16 11:23:05 2018
+
+UPDATE:
+implementaion of laspy to improve processing speed
 
 @author: ybcheng
 """
@@ -16,13 +19,122 @@ import shutil
 import copy
 import math
 import time
-import gdal
+#import gdal
+import laspy
 
 
-import improc
+#import improc
 
 import pandas as pd
 import numpy as np
+
+
+def OpenLasFile(Filename):
+    InputFile = laspy.file.File(Filename, mode='r')
+    Data = np.vstack([InputFile.x, InputFile.y, InputFile.z, InputFile.intensity.astype(float),
+                      InputFile.red.astype(float), InputFile.green.astype(float), InputFile.blue.astype(float),  
+                      InputFile.num_returns.astype(float), InputFile.return_num.astype(float),
+                      InputFile.Raw_Classification.astype(int)]).transpose()
+    DF = pd.DataFrame(Data, columns = ['X', 'Y', 'Z', 'Intensity', 
+                                       'Red', 'Green', 'Blue',
+                                       'NumberOfReturns', 'ReturnNumber', 'Classification'])
+    Header = InputFile.header
+    InputFile.close()
+    return DF, Header
+    
+    
+def proc_veg_height(in_file, grid_size, mean_file=None, std_file=None, grnd_cls=2, veg_cls=4):
+    """
+    tool to calculate average veg height and std dev 
+        -- requires well classified point cloud and transformation to dz
+    """
+    
+    start_time = time.time()
+    
+    #if in_file.endswith('.csv'):
+    #    print()
+    #elif in_file.endswith('.txt'):
+    #    os.rename(in_file, in_file.replace('.txt','.csv'))        
+    #    in_file = in_file.replace('.txt','.csv')
+    #else:        
+    #    print('ERROR: input .csv file.')
+    #    return      
+    
+    print(in_file)
+    
+    #in_df = pd.read_csv(in_file, sep=None, header=None, engine='python')
+    #in_df.columns = colnames #['c', 'x' , 'y', 'z']
+    
+    in_df, header = OpenLasFile(in_file)
+    in_df = in_df.loc[in_df['Z'] >= 0.0]    
+    
+    #in_df['veg'] = in_df.iloc[:,cls_col].apply(lambda x: x==veg_cls)
+    #in_df['veg'] = in_df['veg'].astype(int)
+    
+    init_x = math.ceil(np.min(in_df.X))
+    init_y = math.ceil(np.min(in_df.Y))
+    
+    dim_x = math.floor((np.max(in_df.X)-init_x)/grid_size) + 1
+    dim_y = math.floor((np.max(in_df.Y)-init_y)/grid_size) + 1
+    
+    end_x = init_x + (dim_x - 1) * grid_size
+    end_y = init_y + (dim_y - 1) * grid_size
+    
+    out_df = pd.DataFrame(index=np.arange(dim_x*dim_y),
+                          columns=['x', 'y', 'mean', 'stdev'], dtype=float)
+                          
+    out_df.x = list(np.arange(init_x, end_x+grid_size, grid_size)) * dim_y
+    out_df.y = sorted(list(np.arange(init_y, end_y+grid_size, grid_size)) * dim_x)
+        
+   
+    for i in np.arange(out_df.shape[0]):
+        if ((i%1000) == 0):
+            print("%i / %i --- %.2f seconds" % (i, out_df.shape[0], (time.time()-start_time)))
+                    
+        up_x = out_df.x[i] + 0.5*grid_size
+        lo_x = out_df.x[i] - 0.5*grid_size
+        up_y = out_df.y[i] + 0.5*grid_size
+        lo_y = out_df.y[i] - 0.5*grid_size
+        
+        tmp_df = in_df.loc[(in_df.X > lo_x) & (in_df.X < up_x) &
+                           (in_df.Y > lo_y) & (in_df.Y < up_y)]
+        
+        if (len(tmp_df) == 0):
+            out_df.loc[i,'mean'] = 0
+            out_df.loc[i,'stdev'] = 0
+        else:
+            out_df.loc[i, 'mean']  = np.average(tmp_df.Z)
+            out_df.loc[i, 'stdev'] = np.std(tmp_df.Z)                  
+    
+    mean_df = out_df[['x','y','mean' ]]
+    std_df  = out_df[['x','y','stdev']]    
+        
+    
+    if mean_file is None:
+        mean_file = in_file.replace('.las', '_mean.csv')
+    if std_file is None:
+        std_file = in_file.replace('.las', '_std.csv')
+        
+    mean_df.to_csv(mean_file, index=False, sep=',')
+    std_df.to_csv(std_file, index=False, sep=',')
+    
+    print("Done in --- %.2f seconds ---" % (time.time() - start_time))
+    
+    return mean_file, std_file
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def proc_dpf_las (in_file, ct_file, veg_cls=4, grnd_cls=2, keep_default=True):

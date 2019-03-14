@@ -104,6 +104,7 @@ def write_geotiff_w_source(source_filename, output_img, output_filename,
     out_raster.close()
 
 
+
 def testing_classi_loc_max(img_filepath, bg_thres, out_filepath=None, min_distance=3,
                       use_otsu=True, use_adapt=False, output_cov=True):
     """
