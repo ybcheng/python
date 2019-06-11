@@ -64,9 +64,9 @@ def check_data(in_dir, im_type='rgb'):
     
     
     if im_type is 'rgb':
-        num01 = len(glob.glob(in_dir + '*M3C01*.nc'))
-        num02 = len(glob.glob(in_dir + '*M3C02*.nc'))
-        num03 = len(glob.glob(in_dir + '*M3C03*.nc'))
+        num01 = len(glob.glob(in_dir + '*-M*C01_*.nc'))
+        num02 = len(glob.glob(in_dir + '*-M*C02_*.nc'))
+        num03 = len(glob.glob(in_dir + '*-M*C03_*.nc'))
         if (num01 != num02) or (num01 != num03) or (num02 != num03):
             print('check database')
             print('C01: %i files' % num01 )
@@ -75,12 +75,12 @@ def check_data(in_dir, im_type='rgb'):
             dt_list=[]
         else:
             print('database looks good')
-            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*M3C01*.nc')]
+            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*-M*C01_*.nc')]
             dt_list = [y.split('_')[3][1:12] for y in flist]
     elif im_type is 'nclr':
-        num02 = len(glob.glob(in_dir + '*M3C02*.nc'))
-        num03 = len(glob.glob(in_dir + '*M3C03*.nc'))
-        num05 = len(glob.glob(in_dir + '*M3C05*.nc'))
+        num02 = len(glob.glob(in_dir + '*-M*C02_*.nc'))
+        num03 = len(glob.glob(in_dir + '*-M*C03_*.nc'))
+        num05 = len(glob.glob(in_dir + '*-M*C05_*.nc'))
         if (num02 != num03) or (num03 != num05) or (num02 != num05):
             print('check database')
             print('C02: %i files' % num02 )
@@ -89,12 +89,12 @@ def check_data(in_dir, im_type='rgb'):
             dt_list=[]
         else:
             print('database looks good')
-            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*M3C02*.nc')]
+            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*-M*C02_*.nc')]
             dt_list = [y.split('_')[3][1:12] for y in flist]
     elif im_type is 'fclr':
-        num01 = len(glob.glob(in_dir + '*M3C01*.nc'))
-        num03 = len(glob.glob(in_dir + '*M3C03*.nc'))
-        num05 = len(glob.glob(in_dir + '*M3C05*.nc'))
+        num01 = len(glob.glob(in_dir + '*-M*C01_*.nc'))
+        num03 = len(glob.glob(in_dir + '*-M*C03_*.nc'))
+        num05 = len(glob.glob(in_dir + '*-M*C05_*.nc'))
         if (num01 != num03) or (num03 != num05) or (num01 != num05):
             print('check database')
             print('C01: %i files' % num01 )
@@ -103,12 +103,12 @@ def check_data(in_dir, im_type='rgb'):
             dt_list=[]
         else:
             print('database looks good')
-            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*M3C01*.nc')]
+            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*-M*C01_*.nc')]
             dt_list = [y.split('_')[3][1:12] for y in flist]
     elif im_type is 'dust':
-        num11 = len(glob.glob(in_dir + '*M3C11*.nc'))
-        num13 = len(glob.glob(in_dir + '*M3C13*.nc'))
-        num15 = len(glob.glob(in_dir + '*M3C15*.nc'))
+        num11 = len(glob.glob(in_dir + '*-M*C11_*.nc'))
+        num13 = len(glob.glob(in_dir + '*-M*C13_*.nc'))
+        num15 = len(glob.glob(in_dir + '*-M*C15_*.nc'))
         if (num11 != num13) or (num13 != num15) or (num11 != num15):
             print('check database')
             print('C11: %i files' % num11 )
@@ -117,7 +117,7 @@ def check_data(in_dir, im_type='rgb'):
             dt_list=[]
         else:
             print('database looks good')
-            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*M3C11*.nc')]
+            flist = [os.path.basename(x) for x in glob.glob(in_dir + '*-M*C11_*.nc')]
             dt_list = [y.split('_')[3][1:12] for y in flist]
     else:
        dt_list=[] 

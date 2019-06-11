@@ -1,0 +1,15 @@
+--BATCH DOWNLOADS--
+https://aria2.github.io/
+
+aria2c --http-user=username --http-passwd=password --check-certificate=false --max-concurrent-downloads=2 --auto-file-renaming=false -M products.meta4
+
+
+
+
+--BATCH SEN2COR--
+http://step.esa.int/main/third-party-plugins-2/sen2cor/
+https://forum.step.esa.int/t/batch-processing/5762/3
+https://forum.step.esa.int/t/sen2cor-02-05-05-win64-attributeerror-l2a-tables-object-has-no-attribute--l2a-tile-pvi-file/9587/3
+
+in conda:
+for /D %s in (<PATH/TO/sentinelFolder>\S2A_OPER_PRD_MSIL1C*) do L2A_Process %s

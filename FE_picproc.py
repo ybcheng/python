@@ -7,6 +7,8 @@ Utilities for processing Salton Sea soil core photos
 
 
 import os
+import sys
+import glob
 import fnmatch
 from shutil import copyfile
 
@@ -14,7 +16,8 @@ import improc
 import numpy as np
 
 
-def ren_mosaic(mosaic_dir, file_pattern='*stitch.jpg'):
+def ren_mosaic(mosaic_dir='K:/IID_SaltonSea/Tasks/Soil mapping/PhotoDocumentation/Original/', 
+               file_pattern='*stitch.jpg'):
     """
     may be a handy little tool that renames mosaic filename
     so it matches folder name (core name)
@@ -27,6 +30,10 @@ def ren_mosaic(mosaic_dir, file_pattern='*stitch.jpg'):
         stitched photos, if out of MS ICE, it should have _stitch appended
     """ 
         
+   
+    if not os.path.exists(mosaic_dir):
+        sys.exit('input folder does not exist')
+   
     mosaics = []
     for root, dirnames, filenames in os.walk(mosaic_dir):
         for filename in fnmatch.filter(filenames, file_pattern):
@@ -49,7 +56,9 @@ def ren_mosaic(mosaic_dir, file_pattern='*stitch.jpg'):
     print('skipped total of %i files' % s)    
 
 
-def copy_mosaic(mosaic_dir, output_dir, file_pattern='IID201802*jpg', replace=False):
+def copy_mosaic(mosaic_dir='K:/IID_SaltonSea/Tasks/Soil mapping/PhotoDocumentation/Original/',
+                output_dir='K:/IID_SaltonSea/Tasks/Soil mapping/PhotoDocumentation/Processing/',
+                file_pattern='IID201905*jpg', replace=False):
     """
     may be a handy little tool that copies soil core mosaic to "final" folder
     the program searches all the stitched photos in a dir and sub-dir
@@ -65,6 +74,9 @@ def copy_mosaic(mosaic_dir, output_dir, file_pattern='IID201802*jpg', replace=Fa
         stitched photos should have the same name as soil cores
     """ 
         
+    if not os.path.exists(mosaic_dir):
+        sys.exit('input folder does not exist')
+    
     mosaics = []
     for root, dirnames, filenames in os.walk(mosaic_dir):
         for filename in fnmatch.filter(filenames, file_pattern):
@@ -92,8 +104,9 @@ def copy_mosaic(mosaic_dir, output_dir, file_pattern='IID201802*jpg', replace=Fa
     print('skipped total of %i files' % s)
 
 
-def rot_mosaic(source_dir, output_dir, file_pattern='IID201710*.jpg',
-               k=1, replace=False):
+def rot_mosaic(source_dir='K:/IID_SaltonSea/Tasks/Soil mapping/PhotoDocumentation/Processing/',
+               output_dir='K:/IID_SaltonSea/Tasks/Soil mapping/PhotoDocumentation/Final/',
+               file_pattern='IID201905*.jpg', sub_dir=False, k=1, replace=False):
     """
     may be a handy little tool that rotates soil core mosaic in "final" folder
     the program searches all the stitched photos in a dir (including sub-dir)
@@ -107,16 +120,22 @@ def rot_mosaic(source_dir, output_dir, file_pattern='IID201710*.jpg',
         where the stitched photos should go
     file_pattern: str
         stitched photos should have the same name as soil cores
+    sub_dir: bool
+        search sub-directory or not, default to False
     k: int
         Number of times the array is rotated counter-clockwise 90 degrees
     replace: bool
         replace existing mosaic or not, default to False 
     """ 
         
-    mosaics = []
-    for root, dirnames, filenames in os.walk(source_dir):
-        for filename in fnmatch.filter(filenames, file_pattern):
-            mosaics.append(os.path.join(root, filename))
+    
+    if sub_dir:
+        mosaics = []
+        for root, dirnames, filenames in os.walk(source_dir):
+            for filename in fnmatch.filter(filenames, file_pattern):
+                mosaics.append(os.path.join(root, filename))
+    else:
+         mosaics = glob.glob(source_dir + file_pattern)       
             
     g = 0
     r = 0
